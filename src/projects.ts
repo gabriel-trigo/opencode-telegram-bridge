@@ -2,7 +2,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import Database from "better-sqlite3"
+import { createDatabase, type StoreOptions } from "./storage.js"
 
 export type ProjectRecord = {
   alias: string
@@ -14,10 +14,6 @@ export type ProjectStore = {
   getProject: (alias: string) => ProjectRecord | null
   addProject: (alias: string, projectPath: string) => ProjectRecord
   removeProject: (alias: string) => void
-}
-
-export type ProjectStoreOptions = {
-  dbPath?: string
 }
 
 export const HOME_PROJECT_ALIAS = "home"
@@ -59,21 +55,10 @@ const resolveProjectPath = (rawPath: string) => {
   return resolved
 }
 
-const ensureDatabaseDirectory = (dbPath: string) => {
-  const directory = path.dirname(dbPath)
-  fs.mkdirSync(directory, { recursive: true })
-}
-
-const getDatabasePath = () =>
-  path.join(os.homedir(), ".opencode-telegram-bridge", "projects.db")
-
 export const createProjectStore = (
-  options: ProjectStoreOptions = {},
+  options: StoreOptions = {},
 ): ProjectStore => {
-  const dbPath = options.dbPath ?? getDatabasePath()
-  ensureDatabaseDirectory(dbPath)
-
-  const db = new Database(dbPath)
+  const db = createDatabase(options)
   db.exec(
     "CREATE TABLE IF NOT EXISTS projects (alias TEXT PRIMARY KEY, path TEXT NOT NULL)",
   )

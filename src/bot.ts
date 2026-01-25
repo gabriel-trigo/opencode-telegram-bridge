@@ -3,6 +3,7 @@ import { Telegraf } from "telegraf"
 import type { BotConfig } from "./config.js"
 import type { OpencodeBridge } from "./opencode.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
+import type { ChatProjectStore } from "./state.js"
 
 type TelegramUser = {
   id?: number
@@ -28,15 +29,15 @@ export const startBot = (
   config: BotConfig,
   opencode: OpencodeBridge,
   projects: ProjectStore,
+  chatProjects: ChatProjectStore,
 ) => {
   const bot = new Telegraf(config.botToken)
-  const chatProjects = new Map<number, string>()
 
   const getChatProjectAlias = (chatId: number) =>
-    chatProjects.get(chatId) ?? HOME_PROJECT_ALIAS
+    chatProjects.getActiveAlias(chatId) ?? HOME_PROJECT_ALIAS
 
   const setChatProjectAlias = (chatId: number, alias: string) => {
-    chatProjects.set(chatId, alias)
+    chatProjects.setActiveAlias(chatId, alias)
   }
 
   const formatProjectList = (activeAlias: string) => {

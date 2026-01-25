@@ -6,8 +6,8 @@ Run a Telegram bot that forwards messages to an OpenCode backend and returns res
 ## Architecture
 - Run OpenCode in server mode (`opencode serve`) on the same host, bound to localhost.
 - A long-running Telegram bot process translates Telegram messages into OpenCode SDK calls.
-- Each Telegram chat reuses an OpenCode session stored in-memory by chat id.
-- Project aliases persist in SQLite at `~/.opencode-telegram-bridge/projects.db`, with `home` mapped to the OS home directory.
+- Each Telegram chat reuses an OpenCode session per project, with session ids persisted in SQLite by chat id and project path.
+- Project aliases and chat project selection persist in SQLite at `~/.opencode-telegram-bridge/projects.db`, with `home` mapped to the OS home directory.
 
 ## Useful commands
 - Install dependencies: `npm install`

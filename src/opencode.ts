@@ -18,6 +18,10 @@ export type SessionStore = {
   clearSession: (chatId: number, projectDir: string) => boolean
 }
 
+export type OpencodeBridgeOptions = {
+  sessionStore?: SessionStore
+}
+
 const buildBasicAuthHeader = (username: string, password: string) => {
   const encoded = Buffer.from(`${username}:${password}`).toString("base64")
   return `Basic ${encoded}`
@@ -60,7 +64,10 @@ export const createSessionStore = (): SessionStore => {
   }
 }
 
-export const createOpencodeBridge = (config: OpencodeConfig): OpencodeBridge => {
+export const createOpencodeBridge = (
+  config: OpencodeConfig,
+  options: OpencodeBridgeOptions = {},
+): OpencodeBridge => {
   const headers: Record<string, string> = {}
   if (config.serverPassword) {
     headers.Authorization = buildBasicAuthHeader(
@@ -74,7 +81,7 @@ export const createOpencodeBridge = (config: OpencodeConfig): OpencodeBridge => 
     headers,
   })
 
-  const sessions = createSessionStore()
+  const sessions = options.sessionStore ?? createSessionStore()
 
   const ensureSession = async (chatId: number, projectDir: string) => {
     const existing = sessions.getSessionId(chatId, projectDir)
