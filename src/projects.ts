@@ -16,6 +16,10 @@ export type ProjectStore = {
   removeProject: (alias: string) => void
 }
 
+export type ProjectStoreOptions = {
+  dbPath?: string
+}
+
 export const HOME_PROJECT_ALIAS = "home"
 
 const normalizeAlias = (alias: string) => {
@@ -63,8 +67,10 @@ const ensureDatabaseDirectory = (dbPath: string) => {
 const getDatabasePath = () =>
   path.join(os.homedir(), ".opencode-telegram-bridge", "projects.db")
 
-export const createProjectStore = (): ProjectStore => {
-  const dbPath = getDatabasePath()
+export const createProjectStore = (
+  options: ProjectStoreOptions = {},
+): ProjectStore => {
+  const dbPath = options.dbPath ?? getDatabasePath()
   ensureDatabaseDirectory(dbPath)
 
   const db = new Database(dbPath)

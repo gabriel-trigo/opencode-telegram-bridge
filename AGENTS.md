@@ -15,12 +15,16 @@ Run a Telegram bot that forwards messages to an OpenCode backend and returns res
 - Build: `npm run build`
 - Run built bot: `npm start`
 - Typecheck: `npm run typecheck`
+- Run tests: `npm test`
+- Run tests in watch mode: `npm run test:watch`
+- Run test coverage: `npm run test:coverage`
 
 ## Tests and validation
-- No test suite yet. When added, document the test command here.
-- Validate changes by running `npm run typecheck` and `npm run build`.
+- Run the test suite with `npm test`.
+- Validate changes by running `npm run typecheck`, `npm test`, and `npm run build`.
 
 ## Unit test guidance
 - Add tests only when they verify meaningful behavior (config parsing, auth allowlist, event handling, error paths).
 - Avoid tests that only duplicate TypeScript or library behavior.
 - Prefer small, deterministic tests over end-to-end coverage.
+- New or changed core logic should be covered by unit tests where practical.
