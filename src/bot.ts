@@ -161,6 +161,36 @@ export const startBot = (
     }
   })
 
+  bot.command("reset", async (ctx) => {
+    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+      await ctx.reply("Not authorized.")
+      return
+    }
+
+    const chatId = ctx.chat?.id
+    if (!chatId) {
+      console.warn("Missing chat id for incoming reset command")
+      await ctx.reply("Missing chat context.")
+      return
+    }
+
+    const activeAlias = getChatProjectAlias(chatId)
+    const project = projects.getProject(activeAlias)
+    if (!project) {
+      console.error("Missing project for chat", { chatId, activeAlias })
+      await ctx.reply("Missing project configuration.")
+      return
+    }
+
+    const didReset = opencode.resetSession(chatId, project.path)
+    if (didReset) {
+      await ctx.reply(`Session reset for ${project.alias}.`)
+      return
+    }
+
+    await ctx.reply(`No active session to reset for ${project.alias}.`)
+  })
+
   bot.on("text", async (ctx) => {
     if (!isAuthorized(ctx.from, config.allowedUserId)) {
       await ctx.reply("Not authorized.")

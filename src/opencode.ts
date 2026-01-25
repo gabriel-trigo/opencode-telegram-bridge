@@ -9,6 +9,13 @@ export type OpencodeBridge = {
     text: string,
     projectDir: string,
   ) => Promise<string>
+  resetSession: (chatId: number, projectDir: string) => boolean
+}
+
+export type SessionStore = {
+  getSessionId: (chatId: number, projectDir: string) => string | undefined
+  setSessionId: (chatId: number, projectDir: string, sessionId: string) => void
+  clearSession: (chatId: number, projectDir: string) => boolean
 }
 
 const buildBasicAuthHeader = (username: string, password: string) => {
@@ -36,6 +43,23 @@ const requireData = <T>(
   return result.data as NonNullable<T>
 }
 
+const buildSessionKey = (chatId: number, projectDir: string) =>
+  `${chatId}\u0000${projectDir}`
+
+export const createSessionStore = (): SessionStore => {
+  const sessions = new Map<string, string>()
+
+  return {
+    getSessionId: (chatId, projectDir) =>
+      sessions.get(buildSessionKey(chatId, projectDir)),
+    setSessionId: (chatId, projectDir, sessionId) => {
+      sessions.set(buildSessionKey(chatId, projectDir), sessionId)
+    },
+    clearSession: (chatId, projectDir) =>
+      sessions.delete(buildSessionKey(chatId, projectDir)),
+  }
+}
+
 export const createOpencodeBridge = (config: OpencodeConfig): OpencodeBridge => {
   const headers: Record<string, string> = {}
   if (config.serverPassword) {
@@ -50,14 +74,10 @@ export const createOpencodeBridge = (config: OpencodeConfig): OpencodeBridge => 
     headers,
   })
 
-  const sessions = new Map<string, string>()
-
-  const buildSessionKey = (chatId: number, projectDir: string) =>
-    `${chatId}\u0000${projectDir}`
+  const sessions = createSessionStore()
 
   const ensureSession = async (chatId: number, projectDir: string) => {
-    const sessionKey = buildSessionKey(chatId, projectDir)
-    const existing = sessions.get(sessionKey)
+    const existing = sessions.getSessionId(chatId, projectDir)
     if (existing) {
       return existing
     }
@@ -68,7 +88,7 @@ export const createOpencodeBridge = (config: OpencodeConfig): OpencodeBridge => 
     })
     const session = requireData(sessionResult, "session.create")
 
-    sessions.set(sessionKey, session.id)
+    sessions.setSessionId(chatId, projectDir, session.id)
     return session.id
   }
 
@@ -88,6 +108,9 @@ export const createOpencodeBridge = (config: OpencodeConfig): OpencodeBridge => 
       }
 
       return reply
+    },
+    resetSession(chatId, projectDir) {
+      return sessions.clearSession(chatId, projectDir)
     },
   }
 }
