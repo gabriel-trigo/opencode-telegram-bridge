@@ -1,6 +1,14 @@
 export type BotConfig = {
   botToken: string
   allowedUserId: number
+  opencode: OpencodeConfig
+}
+
+export type OpencodeConfig = {
+  serverUrl: string
+  projectDir: string
+  serverUsername: string
+  serverPassword?: string
 }
 
 const parseAllowedUserId = (rawValue: string | undefined): number => {
@@ -23,8 +31,30 @@ export const loadConfig = (): BotConfig => {
   }
 
   const allowedUserId = parseAllowedUserId(process.env.TELEGRAM_ALLOWED_USER_ID)
+  const serverUrl = process.env.OPENCODE_SERVER_URL
+  if (!serverUrl) {
+    throw new Error("Missing OPENCODE_SERVER_URL")
+  }
+
+  const projectDir = process.env.OPENCODE_PROJECT_DIR
+  if (!projectDir) {
+    throw new Error("Missing OPENCODE_PROJECT_DIR")
+  }
+
+  const opencode: OpencodeConfig = {
+    serverUrl,
+    projectDir,
+    serverUsername: process.env.OPENCODE_SERVER_USERNAME ?? "opencode",
+  }
+
+  const serverPassword = process.env.OPENCODE_SERVER_PASSWORD
+  if (serverPassword) {
+    opencode.serverPassword = serverPassword
+  }
+
   return {
     botToken,
     allowedUserId,
+    opencode,
   }
 }

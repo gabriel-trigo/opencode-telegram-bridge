@@ -1,6 +1,7 @@
 import { Telegraf } from "telegraf"
 
 import type { BotConfig } from "./config.js"
+import type { OpencodeBridge } from "./opencode.js"
 
 type TelegramUser = {
   id?: number
@@ -22,7 +23,7 @@ const formatUserLabel = (user: TelegramUser | undefined) => {
   return String(user.id ?? "unknown")
 }
 
-export const startBot = (config: BotConfig) => {
+export const startBot = (config: BotConfig, opencode: OpencodeBridge) => {
   const bot = new Telegraf(config.botToken)
 
   bot.start(async (ctx) => {
@@ -42,9 +43,23 @@ export const startBot = (config: BotConfig) => {
 
     const text = ctx.message.text
     const userLabel = formatUserLabel(ctx.from)
+    const chatId = ctx.chat?.id
+
+    if (!chatId) {
+      console.warn("Missing chat id for incoming message", { userLabel })
+      await ctx.reply("Missing chat context.")
+      return
+    }
 
     console.log(`[telegram] ${userLabel}: ${text}`)
-    await ctx.reply("Received. Logged on server.")
+
+    try {
+      const reply = await opencode.promptFromChat(chatId, text)
+      await ctx.reply(reply)
+    } catch (error) {
+      console.error("Failed to send prompt to OpenCode", error)
+      await ctx.reply("OpenCode error. Check server logs.")
+    }
   })
 
   bot.catch((error, ctx) => {

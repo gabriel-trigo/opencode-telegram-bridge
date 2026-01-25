@@ -1,12 +1,12 @@
 # OpenCode Telegram Bridge
 
 ## Project goal
-Run a Telegram bot that forwards messages to an OpenCode backend and returns responses. The MVP focuses on reliable message intake, allowlisted access, and clean service operation.
+Run a Telegram bot that forwards messages to an OpenCode backend and returns responses. The MVP focuses on reliable message intake, allowlisted access, and clean service operation with text-only request/response.
 
 ## Architecture
 - Run OpenCode in server mode (`opencode serve`) on the same host, bound to localhost.
 - A long-running Telegram bot process translates Telegram messages into OpenCode SDK calls.
-- Streamed OpenCode events are converted into Telegram responses, including permission prompts.
+- Each Telegram chat reuses an OpenCode session stored in-memory by chat id.
 
 ## Useful commands
 - Install dependencies: `npm install`
