@@ -41,6 +41,7 @@
     "moduleDetection": "force",
     "skipLibCheck": true,
 
-    "moduleResolution": "nodenext"
+    "moduleResolution": "nodenext",
+    "esModuleInterop": true
   }
 }

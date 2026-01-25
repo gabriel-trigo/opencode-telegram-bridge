@@ -6,7 +6,6 @@ export type BotConfig = {
 
 export type OpencodeConfig = {
   serverUrl: string
-  projectDir: string
   serverUsername: string
   serverPassword?: string
 }
@@ -36,14 +35,8 @@ export const loadConfig = (): BotConfig => {
     throw new Error("Missing OPENCODE_SERVER_URL")
   }
 
-  const projectDir = process.env.OPENCODE_PROJECT_DIR
-  if (!projectDir) {
-    throw new Error("Missing OPENCODE_PROJECT_DIR")
-  }
-
   const opencode: OpencodeConfig = {
     serverUrl,
-    projectDir,
     serverUsername: process.env.OPENCODE_SERVER_USERNAME ?? "opencode",
   }
 

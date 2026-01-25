@@ -4,7 +4,11 @@ import type { Part } from "@opencode-ai/sdk/v2"
 import type { OpencodeConfig } from "./config.js"
 
 export type OpencodeBridge = {
-  promptFromChat: (chatId: number, text: string) => Promise<string>
+  promptFromChat: (
+    chatId: number,
+    text: string,
+    projectDir: string,
+  ) => Promise<string>
 }
 
 const buildBasicAuthHeader = (username: string, password: string) => {
@@ -46,31 +50,35 @@ export const createOpencodeBridge = (config: OpencodeConfig): OpencodeBridge => 
     headers,
   })
 
-  const sessions = new Map<number, string>()
+  const sessions = new Map<string, string>()
 
-  const ensureSession = async (chatId: number) => {
-    const existing = sessions.get(chatId)
+  const buildSessionKey = (chatId: number, projectDir: string) =>
+    `${chatId}\u0000${projectDir}`
+
+  const ensureSession = async (chatId: number, projectDir: string) => {
+    const sessionKey = buildSessionKey(chatId, projectDir)
+    const existing = sessions.get(sessionKey)
     if (existing) {
       return existing
     }
 
     const sessionResult = await client.session.create({
-      directory: config.projectDir,
+      directory: projectDir,
       title: `Telegram chat ${chatId}`,
     })
     const session = requireData(sessionResult, "session.create")
 
-    sessions.set(chatId, session.id)
+    sessions.set(sessionKey, session.id)
     return session.id
   }
 
   return {
-    async promptFromChat(chatId, text) {
-      const sessionId = await ensureSession(chatId)
+    async promptFromChat(chatId, text, projectDir) {
+      const sessionId = await ensureSession(chatId, projectDir)
 
       const responseResult = await client.session.prompt({
         sessionID: sessionId,
-        directory: config.projectDir,
+        directory: projectDir,
         parts: [{ type: "text", text }],
       })
       const response = requireData(responseResult, "session.prompt")
