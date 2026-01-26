@@ -8,6 +8,7 @@ export type OpencodeBridge = {
     chatId: number,
     text: string,
     projectDir: string,
+    options?: PromptOptions,
   ) => Promise<string>
   resetSession: (chatId: number, projectDir: string) => boolean
 }
@@ -20,6 +21,10 @@ export type SessionStore = {
 
 export type OpencodeBridgeOptions = {
   sessionStore?: SessionStore
+}
+
+export type PromptOptions = {
+  signal?: AbortSignal
 }
 
 const buildBasicAuthHeader = (username: string, password: string) => {
@@ -100,14 +105,25 @@ export const createOpencodeBridge = (
   }
 
   return {
-    async promptFromChat(chatId, text, projectDir) {
+    async promptFromChat(chatId, text, projectDir, options = {}) {
       const sessionId = await ensureSession(chatId, projectDir)
 
-      const responseResult = await client.session.prompt({
-        sessionID: sessionId,
-        directory: projectDir,
-        parts: [{ type: "text", text }],
-      })
+      /*
+       * The AbortSignal only cancels the HTTP request. The server may continue
+       * processing, but the client stops waiting and the bot can move on.
+       */
+      const requestOptions = options.signal
+        ? { signal: options.signal }
+        : undefined
+
+      const responseResult = await client.session.prompt(
+        {
+          sessionID: sessionId,
+          directory: projectDir,
+          parts: [{ type: "text", text }],
+        },
+        requestOptions,
+      )
       const response = requireData(responseResult, "session.prompt")
       const reply = extractText(response.parts)
       if (!reply) {

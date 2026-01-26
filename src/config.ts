@@ -2,6 +2,8 @@ export type BotConfig = {
   botToken: string
   allowedUserId: number
   opencode: OpencodeConfig
+  handlerTimeoutMs: number
+  promptTimeoutMs: number
 }
 
 export type OpencodeConfig = {
@@ -18,6 +20,22 @@ const parseAllowedUserId = (rawValue: string | undefined): number => {
   const parsedValue = Number(rawValue)
   if (!Number.isInteger(parsedValue)) {
     throw new Error("TELEGRAM_ALLOWED_USER_ID must be an integer")
+  }
+
+  return parsedValue
+}
+
+const parseDurationMs = (
+  rawValue: string | undefined,
+  label: string,
+): number | undefined => {
+  if (!rawValue) {
+    return undefined
+  }
+
+  const parsedValue = Number(rawValue)
+  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+    throw new Error(`${label} must be a non-negative number`)
   }
 
   return parsedValue
@@ -45,9 +63,22 @@ export const loadConfig = (): BotConfig => {
     opencode.serverPassword = serverPassword
   }
 
+  const promptTimeoutMs =
+    parseDurationMs(
+      process.env.OPENCODE_PROMPT_TIMEOUT_MS,
+      "OPENCODE_PROMPT_TIMEOUT_MS",
+    ) ?? 10 * 60 * 1000
+  const handlerTimeoutMs =
+    parseDurationMs(
+      process.env.TELEGRAM_HANDLER_TIMEOUT_MS,
+      "TELEGRAM_HANDLER_TIMEOUT_MS",
+    ) ?? promptTimeoutMs + 30_000
+
   return {
     botToken,
     allowedUserId,
     opencode,
+    handlerTimeoutMs,
+    promptTimeoutMs,
   }
 }

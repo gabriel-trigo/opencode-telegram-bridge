@@ -2,6 +2,7 @@ import { Telegraf } from "telegraf"
 
 import type { BotConfig } from "./config.js"
 import type { OpencodeBridge } from "./opencode.js"
+import { createPromptGuard } from "./prompt-guard.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
 import type { ChatProjectStore } from "./state.js"
 
@@ -31,7 +32,16 @@ export const startBot = (
   projects: ProjectStore,
   chatProjects: ChatProjectStore,
 ) => {
-  const bot = new Telegraf(config.botToken)
+  const bot = new Telegraf(config.botToken, {
+    handlerTimeout: config.handlerTimeoutMs,
+  })
+  /*
+   * Telegraf wraps each update handler in a timeout. When that timeout fires,
+   * it logs an error but does not cancel the async handler. To avoid dangling
+   * prompts and a stuck in-flight lock, we enforce our own per-chat timeout
+   * and abort the OpenCode request when it exceeds the limit.
+   */
+  const promptGuard = createPromptGuard(config.promptTimeoutMs)
 
   const getChatProjectAlias = (chatId: number) =>
     chatProjects.getActiveAlias(chatId) ?? HOME_PROJECT_ALIAS
@@ -58,6 +68,16 @@ export const startBot = (
     ctx.message?.entities?.some(
       (entity) => entity.type === "bot_command" && entity.offset === 0,
     ) ?? false
+
+  const replyToMessage = async (ctx: { reply: Function; message?: { message_id?: number } }, text: string) => {
+    const replyTo = ctx.message?.message_id
+    if (replyTo) {
+      await ctx.reply(text, { reply_to_message_id: replyTo })
+      return
+    }
+
+    await ctx.reply(text)
+  }
 
   bot.start(async (ctx) => {
     if (!isAuthorized(ctx.from, config.allowedUserId)) {
@@ -212,6 +232,18 @@ export const startBot = (
       return
     }
 
+    if (promptGuard.isInFlight(chatId)) {
+      /*
+       * One prompt at a time per chat. If a prompt is already running for
+       * this chat, we do not enqueue another request.
+       */
+      await replyToMessage(
+        ctx,
+        "Your previous message has not been replied to yet. This message will be ignored.",
+      )
+      return
+    }
+
     const activeAlias = getChatProjectAlias(chatId)
     const project = projects.getProject(activeAlias)
     if (!project) {
@@ -222,16 +254,50 @@ export const startBot = (
 
     console.log(`[telegram] ${userLabel}: ${text}`)
 
+    /*
+     * If we cannot start a prompt, we reply to the new message and ignore it.
+     * When a prompt times out, the guard clears the in-flight state so new
+     * messages can be accepted even if the original handler is still running.
+     */
+    /*
+     * timedOut becomes true only if our prompt timeout fires. Telegraf's
+     * handler timeout does not stop this async handler, so we guard against
+     * late replies by checking this flag before responding.
+     */
+    let timedOut = false
+    const abortController = promptGuard.tryStart(chatId, () => {
+      timedOut = true
+      void replyToMessage(
+        ctx,
+        "OpenCode request timed out. You can send a new message.",
+      )
+    })
+
+    if (!abortController) {
+      await replyToMessage(
+        ctx,
+        "Your previous message has not been replied to yet. This message will be ignored.",
+      )
+      return
+    }
+
     try {
       const reply = await opencode.promptFromChat(
         chatId,
         text,
         project.path,
+        { signal: abortController.signal },
       )
-      await ctx.reply(reply)
+      if (!timedOut) {
+        await replyToMessage(ctx, reply)
+      }
     } catch (error) {
       console.error("Failed to send prompt to OpenCode", error)
-      await ctx.reply("OpenCode error. Check server logs.")
+      if (!timedOut) {
+        await replyToMessage(ctx, "OpenCode error. Check server logs.")
+      }
+    } finally {
+      promptGuard.finish(chatId)
     }
   })
 

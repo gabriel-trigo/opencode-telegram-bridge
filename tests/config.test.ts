@@ -83,15 +83,20 @@ describe("loadConfig", () => {
       OPENCODE_SERVER_URL: "http://localhost:4096",
       OPENCODE_SERVER_USERNAME: undefined,
       OPENCODE_SERVER_PASSWORD: undefined,
+      OPENCODE_PROMPT_TIMEOUT_MS: undefined,
+      TELEGRAM_HANDLER_TIMEOUT_MS: undefined,
     })
 
     const config = loadConfig()
+    const promptTimeoutMs = 10 * 60 * 1000
 
     expect(config.botToken).toBe("token")
     expect(config.allowedUserId).toBe(42)
     expect(config.opencode.serverUrl).toBe("http://localhost:4096")
     expect(config.opencode.serverUsername).toBe("opencode")
     expect(config.opencode.serverPassword).toBeUndefined()
+    expect(config.promptTimeoutMs).toBe(promptTimeoutMs)
+    expect(config.handlerTimeoutMs).toBe(promptTimeoutMs + 30_000)
   })
 
   it("loads config with basic auth password", () => {
@@ -101,11 +106,15 @@ describe("loadConfig", () => {
       OPENCODE_SERVER_URL: "http://localhost:4096",
       OPENCODE_SERVER_USERNAME: "custom",
       OPENCODE_SERVER_PASSWORD: "secret",
+      OPENCODE_PROMPT_TIMEOUT_MS: "120000",
+      TELEGRAM_HANDLER_TIMEOUT_MS: "300000",
     })
 
     const config = loadConfig()
 
     expect(config.opencode.serverUsername).toBe("custom")
     expect(config.opencode.serverPassword).toBe("secret")
+    expect(config.promptTimeoutMs).toBe(120000)
+    expect(config.handlerTimeoutMs).toBe(300000)
   })
 })
