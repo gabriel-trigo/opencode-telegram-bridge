@@ -9,6 +9,18 @@ Run a Telegram bot that forwards messages to an OpenCode backend and returns res
 - Each Telegram chat reuses an OpenCode session per project, with session ids persisted in SQLite by chat id and project path.
 - Project aliases and chat project selection persist in SQLite at `~/.opencode-telegram-bridge/projects.db`, with `home` mapped to the OS home directory.
 
+## Runtime behavior
+- Telegraf long-polling fetches updates in batches and runs handlers concurrently for each batch.
+- Prompt handling runs out-of-band so the Telegraf handler can return immediately.
+- The bot enforces one in-flight prompt per chat. Extra messages in the same chat receive a "previous message" reply.
+- Telegraf handler timeouts only log errors. Prompt timeouts are enforced by the bot and abort the HTTP request.
+
+## Prompt flow mental model
+- The Telegraf handler validates the message, acquires a per-chat lock, and returns immediately.
+- A background task sends the prompt to OpenCode and later replies via `bot.telegram.sendMessage` with `reply_parameters`.
+- If a prompt exceeds the bot timeout, the request is aborted, the lock is released, and a timeout reply is sent.
+- If a prompt is already in flight for a chat, new messages are ignored with a "previous message" reply.
+
 ## Useful commands
 - Install dependencies: `npm install`
 - Start dev bot (watch mode): `npm run dev`

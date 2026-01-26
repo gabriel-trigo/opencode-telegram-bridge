@@ -43,6 +43,25 @@ export const startBot = (
    */
   const promptGuard = createPromptGuard(config.promptTimeoutMs)
 
+  const sendReply = async (
+    chatId: number,
+    replyToMessageId: number | undefined,
+    text: string,
+  ) => {
+    try {
+      if (replyToMessageId) {
+        await bot.telegram.sendMessage(chatId, text, {
+          reply_parameters: { message_id: replyToMessageId },
+        })
+        return
+      }
+
+      await bot.telegram.sendMessage(chatId, text)
+    } catch (error) {
+      console.error("Failed to send Telegram reply", error)
+    }
+  }
+
   const getChatProjectAlias = (chatId: number) =>
     chatProjects.getActiveAlias(chatId) ?? HOME_PROJECT_ALIAS
 
@@ -68,16 +87,6 @@ export const startBot = (
     ctx.message?.entities?.some(
       (entity) => entity.type === "bot_command" && entity.offset === 0,
     ) ?? false
-
-  const replyToMessage = async (ctx: { reply: Function; message?: { message_id?: number } }, text: string) => {
-    const replyTo = ctx.message?.message_id
-    if (replyTo) {
-      await ctx.reply(text, { reply_to_message_id: replyTo })
-      return
-    }
-
-    await ctx.reply(text)
-  }
 
   bot.start(async (ctx) => {
     if (!isAuthorized(ctx.from, config.allowedUserId)) {
@@ -212,9 +221,9 @@ export const startBot = (
     await ctx.reply(`No active session to reset for ${project.alias}.`)
   })
 
-  bot.on("text", async (ctx) => {
+  bot.on("text", (ctx) => {
     if (!isAuthorized(ctx.from, config.allowedUserId)) {
-      await ctx.reply("Not authorized.")
+      void ctx.reply("Not authorized.")
       return
     }
 
@@ -225,22 +234,11 @@ export const startBot = (
     const text = ctx.message.text
     const userLabel = formatUserLabel(ctx.from)
     const chatId = ctx.chat?.id
+    const replyToMessageId = ctx.message.message_id
 
     if (!chatId) {
       console.warn("Missing chat id for incoming message", { userLabel })
-      await ctx.reply("Missing chat context.")
-      return
-    }
-
-    if (promptGuard.isInFlight(chatId)) {
-      /*
-       * One prompt at a time per chat. If a prompt is already running for
-       * this chat, we do not enqueue another request.
-       */
-      await replyToMessage(
-        ctx,
-        "Your previous message has not been replied to yet. This message will be ignored.",
-      )
+      void ctx.reply("Missing chat context.")
       return
     }
 
@@ -248,7 +246,7 @@ export const startBot = (
     const project = projects.getProject(activeAlias)
     if (!project) {
       console.error("Missing project for chat", { chatId, activeAlias })
-      await ctx.reply("Missing project configuration.")
+      void ctx.reply("Missing project configuration.")
       return
     }
 
@@ -261,44 +259,52 @@ export const startBot = (
      */
     /*
      * timedOut becomes true only if our prompt timeout fires. Telegraf's
-     * handler timeout does not stop this async handler, so we guard against
+     * handler timeout does not stop background work, so we guard against
      * late replies by checking this flag before responding.
      */
     let timedOut = false
     const abortController = promptGuard.tryStart(chatId, () => {
       timedOut = true
-      void replyToMessage(
-        ctx,
+      void sendReply(
+        chatId,
+        replyToMessageId,
         "OpenCode request timed out. You can send a new message.",
       )
     })
 
     if (!abortController) {
-      await replyToMessage(
-        ctx,
+      void sendReply(
+        chatId,
+        replyToMessageId,
         "Your previous message has not been replied to yet. This message will be ignored.",
       )
       return
     }
 
-    try {
-      const reply = await opencode.promptFromChat(
-        chatId,
-        text,
-        project.path,
-        { signal: abortController.signal },
-      )
-      if (!timedOut) {
-        await replyToMessage(ctx, reply)
+    void (async () => {
+      try {
+        const reply = await opencode.promptFromChat(
+          chatId,
+          text,
+          project.path,
+          { signal: abortController.signal },
+        )
+        if (!timedOut) {
+          await sendReply(chatId, replyToMessageId, reply)
+        }
+      } catch (error) {
+        console.error("Failed to send prompt to OpenCode", error)
+        if (!timedOut) {
+          await sendReply(
+            chatId,
+            replyToMessageId,
+            "OpenCode error. Check server logs.",
+          )
+        }
+      } finally {
+        promptGuard.finish(chatId)
       }
-    } catch (error) {
-      console.error("Failed to send prompt to OpenCode", error)
-      if (!timedOut) {
-        await replyToMessage(ctx, "OpenCode error. Check server logs.")
-      }
-    } finally {
-      promptGuard.finish(chatId)
-    }
+    })()
   })
 
   bot.catch((error, ctx) => {
