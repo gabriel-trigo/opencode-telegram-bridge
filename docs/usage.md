@@ -12,3 +12,9 @@
 ## Notes
 - Only one prompt is processed at a time per chat.
 - Permission requests show inline buttons in Telegram.
+
+## CLI
+If installed via npm, start the bot with:
+```bash
+opencode-telegram-bridge
+```

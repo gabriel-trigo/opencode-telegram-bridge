@@ -26,8 +26,8 @@ sudo nano /etc/opencode-telegram-bridge.env
 
 4. Update the service paths if needed:
 
-- `WorkingDirectory=/opt/opencode-telegram-bridge`
-- `ExecStart=/usr/bin/node /opt/opencode-telegram-bridge/dist/index.js`
+- `ExecStart=/usr/bin/opencode-telegram-bridge`
+- If you installed via npm in a non-standard location, set `ExecStart` to the output of `command -v opencode-telegram-bridge`.
 
 5. Enable and start:
 

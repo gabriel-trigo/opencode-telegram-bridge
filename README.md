@@ -32,12 +32,28 @@ opencode serve
 npm run dev
 ```
 
+## Install via npm
+```bash
+npm install -g opencode-telegram-bridge
+```
+
+Run:
+```bash
+opencode-telegram-bridge
+```
+
+You still need OpenCode running separately:
+```bash
+opencode serve
+```
+
 ## Docs
 - `docs/index.md`
 - `docs/installation.md`
 - `docs/configuration.md`
 - `docs/usage.md`
 - `docs/systemd.md`
+- `docs/release.md`
 
 ## Notes
 - Project aliases and chat project selection are stored in `~/.opencode-telegram-bridge/projects.db`.

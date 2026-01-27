@@ -41,7 +41,7 @@ Run a Telegram bot that forwards messages to an OpenCode backend and returns res
 When new commands are added or changed, update this list and the command descriptions.
 
 ## Next task
-- Decide on packaging and release flow (npm CLI vs Docker) and add release instructions.
+- Decide on packaging and release flow (Docker) and add release instructions.
 
 ## Useful commands
 - Install dependencies: `npm install`

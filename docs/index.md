@@ -5,3 +5,4 @@ Start here:
 - `configuration.md`
 - `usage.md`
 - `systemd.md`
+- `release.md`

@@ -30,3 +30,13 @@ For production, build and run:
 npm run build
 npm start
 ```
+
+## Install via npm
+```bash
+npm install -g opencode-telegram-bridge
+```
+
+Run:
+```bash
+opencode-telegram-bridge
+```

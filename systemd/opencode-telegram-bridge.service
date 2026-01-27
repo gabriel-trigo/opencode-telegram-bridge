@@ -5,9 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/opencode-telegram-bridge
 EnvironmentFile=/etc/opencode-telegram-bridge.env
-ExecStart=/usr/bin/node /opt/opencode-telegram-bridge/dist/index.js
+ExecStart=/usr/bin/opencode-telegram-bridge
 Restart=on-failure
 RestartSec=3
 
