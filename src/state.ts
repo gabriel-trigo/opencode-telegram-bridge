@@ -1,5 +1,5 @@
 import { createDatabase, type StoreOptions } from "./storage.js"
-import type { SessionStore } from "./opencode.js"
+import type { SessionOwner, SessionStore } from "./opencode.js"
 
 export type ChatProjectStore = {
   getActiveAlias: (chatId: number) => string | null
@@ -65,6 +65,22 @@ export const createPersistentSessionStore = (
         )
         .run(chatId, projectDir)
       return result.changes > 0
+    },
+    getSessionOwner: (sessionId) => {
+      const row = db
+        .prepare(
+          "SELECT chat_id, project_dir FROM chat_sessions WHERE session_id = ? LIMIT 1",
+        )
+        .get(sessionId) as { chat_id: number; project_dir: string } | undefined
+
+      if (!row) {
+        return null
+      }
+
+      return {
+        chatId: row.chat_id,
+        projectDir: row.project_dir,
+      } satisfies SessionOwner
     },
   }
 }

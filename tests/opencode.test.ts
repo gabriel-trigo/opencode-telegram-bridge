@@ -14,6 +14,10 @@ describe("session store", () => {
     expect(store.getSessionId(1, "/repo/a")).toBe("session-a")
     expect(store.getSessionId(1, "/repo/b")).toBe("session-b")
     expect(store.getSessionId(2, "/repo/a")).toBeUndefined()
+    expect(store.getSessionOwner("session-a")).toEqual({
+      chatId: 1,
+      projectDir: "/repo/a",
+    })
   })
 
   it("clears sessions per chat and project", () => {
@@ -23,6 +27,7 @@ describe("session store", () => {
 
     expect(store.clearSession(1, "/repo/a")).toBe(true)
     expect(store.getSessionId(1, "/repo/a")).toBeUndefined()
+    expect(store.getSessionOwner("session-a")).toBeNull()
     expect(store.clearSession(1, "/repo/a")).toBe(false)
   })
 })

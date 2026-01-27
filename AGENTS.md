@@ -14,12 +14,34 @@ Run a Telegram bot that forwards messages to an OpenCode backend and returns res
 - Prompt handling runs out-of-band so the Telegraf handler can return immediately.
 - The bot enforces one in-flight prompt per chat. Extra messages in the same chat receive a "previous message" reply.
 - Telegraf handler timeouts only log errors. Prompt timeouts are enforced by the bot and abort the HTTP request.
+- OpenCode permission requests are surfaced via the event stream and answered with Telegram inline buttons.
 
 ## Prompt flow mental model
 - The Telegraf handler validates the message, acquires a per-chat lock, and returns immediately.
 - A background task sends the prompt to OpenCode and later replies via `bot.telegram.sendMessage` with `reply_parameters`.
 - If a prompt exceeds the bot timeout, the request is aborted, the lock is released, and a timeout reply is sent.
 - If a prompt is already in flight for a chat, new messages are ignored with a "previous message" reply.
+- Session reuse is keyed by `chat_id + project_dir`, and the session id mapping is persisted in SQLite.
+- The per-chat lock is released either when the background prompt completes (in a `finally` block) or when the prompt timeout fires.
+
+## Event stream model
+- A single global OpenCode event stream is opened on startup and shared across all sessions.
+- Events include `sessionID` and `directory`, which are mapped back to the owning chat.
+- Permission requests are sent to Telegram with inline buttons, and callback replies are forwarded to OpenCode.
+
+## Bot commands
+- `/start` - confirm the bot is online.
+- `/project list` - list project aliases (active project marked with `*`).
+- `/project current` - show the active project alias and path.
+- `/project add <alias> <path>` - add a project alias.
+- `/project remove <alias>` - remove a project alias.
+- `/project set <alias>` - set the active project alias for this chat.
+- `/reset` - reset the OpenCode session for the active project.
+
+When new commands are added or changed, update this list and the command descriptions.
+
+## Next task
+- Add a systemd service template and installation guide for running the bot as a background process on Linux.
 
 ## Useful commands
 - Install dependencies: `npm install`

@@ -1,7 +1,7 @@
-import { Telegraf } from "telegraf"
+import { Markup, Telegraf } from "telegraf"
 
 import type { BotConfig } from "./config.js"
-import type { OpencodeBridge } from "./opencode.js"
+import type { OpencodeBridge, PermissionReply } from "./opencode.js"
 import { createPromptGuard } from "./prompt-guard.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
 import type { ChatProjectStore } from "./state.js"
@@ -9,6 +9,13 @@ import type { ChatProjectStore } from "./state.js"
 type TelegramUser = {
   id?: number
   username?: string
+}
+
+type PendingPermission = {
+  chatId: number
+  messageId: number
+  directory: string
+  summary: string
 }
 
 const isAuthorized = (user: TelegramUser | undefined, allowedUserId: number) =>
@@ -42,6 +49,7 @@ export const startBot = (
    * and abort the OpenCode request when it exceeds the limit.
    */
   const promptGuard = createPromptGuard(config.promptTimeoutMs)
+  const pendingPermissions = new Map<string, PendingPermission>()
 
   const sendReply = async (
     chatId: number,
@@ -61,6 +69,76 @@ export const startBot = (
       console.error("Failed to send Telegram reply", error)
     }
   }
+
+  const buildPermissionSummary = (request: {
+    permission: string
+    patterns: Array<string>
+    always: Array<string>
+  }) => {
+    const lines = ["OpenCode permission request", `Permission: ${request.permission}`]
+    if (request.patterns.length > 0) {
+      lines.push(`Patterns: ${request.patterns.join(", ")}`)
+    }
+    if (request.always.length > 0) {
+      lines.push(`Always scopes: ${request.always.join(", ")}`)
+    }
+
+    return lines.join("\n")
+  }
+
+  const buildPermissionKeyboard = (
+    requestId: string,
+    includeAlways: boolean,
+  ) => {
+    const buttons = [
+      Markup.button.callback("Approve once", `perm:${requestId}:once`),
+      Markup.button.callback("Reject", `perm:${requestId}:reject`),
+    ]
+    if (includeAlways) {
+      buttons.splice(
+        1,
+        0,
+        Markup.button.callback("Approve always", `perm:${requestId}:always`),
+      )
+    }
+
+    return Markup.inlineKeyboard([buttons])
+  }
+
+  opencode.startPermissionEventStream({
+    onPermissionAsked: async ({ request, directory }) => {
+      const owner = opencode.getSessionOwner(request.sessionID)
+      if (!owner) {
+        console.warn("Permission request for unknown session", {
+          sessionId: request.sessionID,
+          requestId: request.id,
+        })
+        return
+      }
+
+      const summary = buildPermissionSummary(request)
+      try {
+        const replyMarkup = buildPermissionKeyboard(
+          request.id,
+          request.always.length > 0,
+        )
+        const message = await bot.telegram.sendMessage(owner.chatId, summary, {
+          reply_markup: replyMarkup.reply_markup,
+        })
+        pendingPermissions.set(request.id, {
+          chatId: owner.chatId,
+          messageId: message.message_id,
+          directory,
+          summary,
+        })
+      } catch (error) {
+        console.error("Failed to send permission request", error)
+      }
+    },
+    onError: (error) => {
+      console.error("OpenCode event stream error", error)
+    },
+  })
 
   const getChatProjectAlias = (chatId: number) =>
     chatProjects.getActiveAlias(chatId) ?? HOME_PROJECT_ALIAS
@@ -219,6 +297,66 @@ export const startBot = (
     }
 
     await ctx.reply(`No active session to reset for ${project.alias}.`)
+  })
+
+  bot.on("callback_query", async (ctx) => {
+    const callbackQuery = ctx.callbackQuery
+    if (!callbackQuery || !("data" in callbackQuery)) {
+      return
+    }
+
+    const data = callbackQuery.data
+    if (!data.startsWith("perm:")) {
+      return
+    }
+
+    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+      await ctx.answerCbQuery("Not authorized.")
+      return
+    }
+
+    const [, requestId, reply] = data.split(":")
+    if (!requestId || !reply) {
+      await ctx.answerCbQuery("Invalid permission response.")
+      return
+    }
+
+    const permissionReply = reply as PermissionReply
+    if (!(["once", "always", "reject"] as PermissionReply[]).includes(permissionReply)) {
+      await ctx.answerCbQuery("Invalid permission response.")
+      return
+    }
+
+    const pending = pendingPermissions.get(requestId)
+    if (!pending) {
+      await ctx.answerCbQuery("Permission request not found.")
+      return
+    }
+
+    try {
+      await opencode.replyToPermission(
+        requestId,
+        permissionReply,
+        pending.directory,
+      )
+      pendingPermissions.delete(requestId)
+      const decisionLabel =
+        permissionReply === "reject"
+          ? "Rejected"
+          : permissionReply === "always"
+          ? "Approved (always)"
+          : "Approved (once)"
+      await bot.telegram.editMessageText(
+        pending.chatId,
+        pending.messageId,
+        undefined,
+        `${pending.summary}\nDecision: ${decisionLabel}`,
+      )
+      await ctx.answerCbQuery("Response sent.")
+    } catch (error) {
+      console.error("Failed to reply to permission", error)
+      await ctx.answerCbQuery("Failed to send response.")
+    }
   })
 
   bot.on("text", (ctx) => {

@@ -43,6 +43,10 @@ describe("persistent session store", () => {
 
       const storeB = createPersistentSessionStore({ dbPath })
       expect(storeB.getSessionId(1, "/repo/a")).toBe("session-a")
+      expect(storeB.getSessionOwner("session-a")).toEqual({
+        chatId: 1,
+        projectDir: "/repo/a",
+      })
       expect(storeB.getSessionId(1, "/repo/b")).toBeUndefined()
     } finally {
       cleanupTempDbPath(root)

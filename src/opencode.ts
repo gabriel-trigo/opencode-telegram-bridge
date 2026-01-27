@@ -1,5 +1,5 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
-import type { Part } from "@opencode-ai/sdk/v2"
+import type { GlobalEvent, Part, PermissionRequest } from "@opencode-ai/sdk/v2"
 
 import type { OpencodeConfig } from "./config.js"
 
@@ -11,12 +11,22 @@ export type OpencodeBridge = {
     options?: PromptOptions,
   ) => Promise<string>
   resetSession: (chatId: number, projectDir: string) => boolean
+  getSessionOwner: (sessionId: string) => SessionOwner | null
+  replyToPermission: (
+    requestId: string,
+    reply: PermissionReply,
+    directory?: string,
+  ) => Promise<boolean>
+  startPermissionEventStream: (handlers: PermissionEventHandlers) => {
+    stop: () => void
+  }
 }
 
 export type SessionStore = {
   getSessionId: (chatId: number, projectDir: string) => string | undefined
   setSessionId: (chatId: number, projectDir: string, sessionId: string) => void
   clearSession: (chatId: number, projectDir: string) => boolean
+  getSessionOwner: (sessionId: string) => SessionOwner | null
 }
 
 export type OpencodeBridgeOptions = {
@@ -25,6 +35,21 @@ export type OpencodeBridgeOptions = {
 
 export type PromptOptions = {
   signal?: AbortSignal
+}
+
+export type PermissionReply = "once" | "always" | "reject"
+
+export type SessionOwner = {
+  chatId: number
+  projectDir: string
+}
+
+export type PermissionEventHandlers = {
+  onPermissionAsked: (event: {
+    request: PermissionRequest
+    directory: string
+  }) => void | Promise<void>
+  onError?: (error: unknown) => void
 }
 
 const buildBasicAuthHeader = (username: string, password: string) => {
@@ -57,15 +82,31 @@ const buildSessionKey = (chatId: number, projectDir: string) =>
 
 export const createSessionStore = (): SessionStore => {
   const sessions = new Map<string, string>()
+  const owners = new Map<string, SessionOwner>()
 
   return {
     getSessionId: (chatId, projectDir) =>
       sessions.get(buildSessionKey(chatId, projectDir)),
     setSessionId: (chatId, projectDir, sessionId) => {
-      sessions.set(buildSessionKey(chatId, projectDir), sessionId)
+      const sessionKey = buildSessionKey(chatId, projectDir)
+      const existing = sessions.get(sessionKey)
+      if (existing && existing !== sessionId) {
+        owners.delete(existing)
+      }
+
+      sessions.set(sessionKey, sessionId)
+      owners.set(sessionId, { chatId, projectDir })
     },
-    clearSession: (chatId, projectDir) =>
-      sessions.delete(buildSessionKey(chatId, projectDir)),
+    clearSession: (chatId, projectDir) => {
+      const sessionKey = buildSessionKey(chatId, projectDir)
+      const existing = sessions.get(sessionKey)
+      if (existing) {
+        owners.delete(existing)
+      }
+
+      return sessions.delete(sessionKey)
+    },
+    getSessionOwner: (sessionId) => owners.get(sessionId) ?? null,
   }
 }
 
@@ -134,6 +175,63 @@ export const createOpencodeBridge = (
     },
     resetSession(chatId, projectDir) {
       return sessions.clearSession(chatId, projectDir)
+    },
+    getSessionOwner(sessionId) {
+      return sessions.getSessionOwner(sessionId)
+    },
+    async replyToPermission(requestId, reply, directory) {
+      const parameters = directory
+        ? { requestID: requestId, reply, directory }
+        : { requestID: requestId, reply }
+      const responseResult = await client.permission.reply(parameters)
+      return requireData(responseResult, "permission.reply")
+    },
+    startPermissionEventStream({ onPermissionAsked, onError }) {
+      const abortController = new AbortController()
+
+      const run = async () => {
+        while (!abortController.signal.aborted) {
+          try {
+            const stream = await client.global.event({
+              signal: abortController.signal,
+            })
+            for await (const event of stream.stream) {
+              if (abortController.signal.aborted) {
+                return
+              }
+
+              const payload = (event as GlobalEvent).payload
+              if (payload?.type !== "permission.asked") {
+                continue
+              }
+
+              const permissionEvent = payload as {
+                type: "permission.asked"
+                properties: PermissionRequest
+              }
+              await Promise.resolve(
+                onPermissionAsked({
+                  request: permissionEvent.properties,
+                  directory: (event as GlobalEvent).directory,
+                }),
+              )
+            }
+          } catch (error) {
+            if (abortController.signal.aborted) {
+              return
+            }
+
+            onError?.(error)
+            await new Promise((resolve) => setTimeout(resolve, 1000))
+          }
+        }
+      }
+
+      void run()
+
+      return {
+        stop: () => abortController.abort(),
+      }
     },
   }
 }
