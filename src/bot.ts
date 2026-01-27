@@ -5,6 +5,7 @@ import type { OpencodeBridge, PermissionReply } from "./opencode.js"
 import { createPromptGuard } from "./prompt-guard.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
 import type { ChatProjectStore } from "./state.js"
+import { splitTelegramMessage } from "./telegram.js"
 
 type TelegramUser = {
   id?: number
@@ -57,14 +58,14 @@ export const startBot = (
     text: string,
   ) => {
     try {
-      if (replyToMessageId) {
-        await bot.telegram.sendMessage(chatId, text, {
-          reply_parameters: { message_id: replyToMessageId },
-        })
-        return
+      const chunks = splitTelegramMessage(text)
+      for (const [index, chunk] of chunks.entries()) {
+        const replyParameters =
+          index === 0 && replyToMessageId
+            ? { reply_parameters: { message_id: replyToMessageId } }
+            : undefined
+        await bot.telegram.sendMessage(chatId, chunk, replyParameters)
       }
-
-      await bot.telegram.sendMessage(chatId, text)
     } catch (error) {
       console.error("Failed to send Telegram reply", error)
     }
