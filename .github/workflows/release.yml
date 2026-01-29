@@ -1,0 +1,48 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - name: Create release PR or publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: npm run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Extract published version
+        if: steps.changesets.outputs.published == 'true'
+        id: version
+        run: |
+          node -e "const pkgs=JSON.parse(process.env.PUBLISHED||'[]'); const pkg=pkgs.find(p=>p.name==='opencode-telegram-bridge'); if(!pkg){process.exit(1)}; process.stdout.write('version='+pkg.version);" >> "$GITHUB_OUTPUT"
+        env:
+          PUBLISHED: ${{ steps.changesets.outputs.publishedPackages }}
+      - name: Create GitHub release
+        if: steps.changesets.outputs.published == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body: "See CHANGELOG.md for details."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -41,7 +41,7 @@ Run a Telegram bot that forwards messages to an OpenCode backend and returns res
 When new commands are added or changed, update this list and the command descriptions.
 
 ## Next task
-- Decide on packaging and release flow (Docker) and add release instructions.
+- Decide whether to add Docker packaging and release instructions.
 
 ## Useful commands
 - Install dependencies: `npm install`
@@ -52,6 +52,9 @@ When new commands are added or changed, update this list and the command descrip
 - Run tests: `npm test`
 - Run tests in watch mode: `npm run test:watch`
 - Run test coverage: `npm run test:coverage`
+- Add a changeset: `npx changeset`
+- Version release: `npm run version`
+- Publish release: `npm run release`
 
 ## Tests and validation
 - Run the test suite with `npm test`.

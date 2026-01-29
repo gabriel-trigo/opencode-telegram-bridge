@@ -23,6 +23,20 @@ npm run release
 
 The `prepublishOnly` script runs the build to ensure `dist/` is included.
 
+## Automated releases (GitHub Actions)
+This repository ships a release workflow that:
+- Opens a release PR when changesets are present.
+- Publishes to npm when that PR is merged.
+- Creates a GitHub release tagged with the published version.
+
+### Required repository secrets
+- `NPM_TOKEN` - granular token with publish rights and 2FA bypass.
+
+### Flow
+1. Merge changes with a changeset into `main`.
+2. The workflow opens a release PR with version + changelog updates.
+3. Merge the release PR to publish and create the GitHub release.
+
 ## CI enforcement
 CI fails if a relevant code change lands without a `.changeset/*.md` file.
 Docs-only updates (`docs/`, `README.md`, `.github/`) do not require a changeset.
