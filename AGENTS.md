@@ -3,6 +3,9 @@
 ## Project goal
 Run a Telegram bot that forwards messages to an OpenCode backend and returns responses. The MVP focuses on reliable message intake, allowlisted access, and clean service operation with text-only request/response.
 
+## Documentation guidelines
+- Keep documentation (README, docs, AGENTS) lean, extremely clear, and always up to date.
+
 ## Architecture
 - Run OpenCode in server mode (`opencode serve`) on the same host, bound to localhost.
 - A long-running Telegram bot process translates Telegram messages into OpenCode SDK calls.

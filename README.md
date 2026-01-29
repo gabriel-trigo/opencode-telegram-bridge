@@ -7,7 +7,22 @@ Run a Telegram bot that forwards messages to an OpenCode backend and returns res
 - OpenCode CLI installed and available on PATH
 - OpenCode server running (`opencode serve`)
 
-## Quickstart
+## Install (for users)
+```bash
+npm install -g opencode-telegram-bridge
+```
+
+Run:
+```bash
+opencode-telegram-bridge
+```
+
+You still need OpenCode running separately:
+```bash
+opencode serve
+```
+
+## Develop (for contributors)
 1. Install dependencies:
 
 ```bash
@@ -32,31 +47,5 @@ opencode serve
 npm run dev
 ```
 
-## Install via npm
-```bash
-npm install -g opencode-telegram-bridge
-```
-
-Run:
-```bash
-opencode-telegram-bridge
-```
-
-You still need OpenCode running separately:
-```bash
-opencode serve
-```
-
-## Docs
-- `docs/index.md`
-- `docs/installation.md`
-- `docs/configuration.md`
-- `docs/usage.md`
-- `docs/systemd.md`
-- `docs/release.md`
-
 ## Releases
 This project uses Changesets. See `docs/release.md`.
-
-## Notes
-- Project aliases and chat project selection are stored in `~/.opencode-telegram-bridge/projects.db`.
