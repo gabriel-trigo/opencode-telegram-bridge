@@ -29,8 +29,9 @@ This repository ships a release workflow that:
 - Publishes to npm when that PR is merged.
 - Creates a GitHub release tagged with the published version.
 
-### Required repository secrets
-- `NPM_TOKEN` - granular token with publish rights and 2FA bypass.
+### Required setup
+- Configure npm Trusted Publishing for this repo and workflow file (`release.yml`).
+- The workflow requires `id-token: write` permission to publish via OIDC.
 
 ### Flow
 1. Merge changes with a changeset into `main`.
