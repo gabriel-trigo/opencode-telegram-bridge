@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.0.2
+
+### Patch Changes
+
+- f22f103: Switch release workflow to npm trusted publishing (OIDC)
+
 ## 1.0.1
 
 ### Patch Changes
