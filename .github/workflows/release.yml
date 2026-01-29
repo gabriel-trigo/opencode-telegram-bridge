@@ -40,8 +40,19 @@ jobs:
           node -e "const pkgs=JSON.parse(process.env.PUBLISHED||'[]'); const pkg=pkgs.find(p=>p.name==='opencode-telegram-bridge'); if(!pkg){process.exit(1)}; process.stdout.write('version='+pkg.version);" >> "$GITHUB_OUTPUT"
         env:
           PUBLISHED: ${{ steps.changesets.outputs.publishedPackages }}
-      - name: Create GitHub release
+      - name: Check existing GitHub release
         if: steps.changesets.outputs.published == 'true'
+        id: release_check
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub release
+        if: steps.changesets.outputs.published == 'true' && steps.release_check.outputs.exists != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
