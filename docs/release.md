@@ -32,6 +32,7 @@ This repository ships a release workflow that:
 ### Required setup
 - Configure npm Trusted Publishing for this repo and workflow file (`release.yml`).
 - The workflow requires `id-token: write` permission to publish via OIDC.
+- npm CLI 11.5.1+ is required for trusted publishing.
 
 ### Flow
 1. Merge changes with a changeset into `main`.
