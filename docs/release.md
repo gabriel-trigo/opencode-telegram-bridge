@@ -2,23 +2,27 @@
 
 This project is published as an npm package.
 
-## Publish
-1. Build the package:
+## Changesets workflow
+1. Add a changeset for your change:
 
 ```bash
-npm run build
+npx changeset
 ```
 
-2. Bump the version:
+2. Version the release:
 
 ```bash
-npm version patch
+npm run version
 ```
 
 3. Publish:
 
 ```bash
-npm publish
+npm run release
 ```
 
 The `prepublishOnly` script runs the build to ensure `dist/` is included.
+
+## CI enforcement
+CI fails if a relevant code change lands without a `.changeset/*.md` file.
+Docs-only updates (`docs/`, `README.md`, `.github/`) do not require a changeset.

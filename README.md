@@ -55,5 +55,8 @@ opencode serve
 - `docs/systemd.md`
 - `docs/release.md`
 
+## Releases
+This project uses Changesets. See `docs/release.md`.
+
 ## Notes
 - Project aliases and chat project selection are stored in `~/.opencode-telegram-bridge/projects.db`.
