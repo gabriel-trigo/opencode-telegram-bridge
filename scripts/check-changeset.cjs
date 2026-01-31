@@ -1,14 +1,74 @@
 #!/usr/bin/env node
 const { execSync } = require("node:child_process")
+const fs = require("node:fs")
+
+const readEventPayload = () => {
+  const eventPath = process.env.GITHUB_EVENT_PATH
+  if (!eventPath) {
+    return null
+  }
+
+  try {
+    const raw = fs.readFileSync(eventPath, "utf8")
+    return JSON.parse(raw)
+  } catch (error) {
+    console.warn("Failed to read GitHub event payload", error)
+    return null
+  }
+}
+
+const resolveDiffRange = () => {
+  const eventName = process.env.GITHUB_EVENT_NAME
+  const payload = readEventPayload()
+
+  if (eventName === "pull_request" || eventName === "pull_request_target") {
+    const base = payload?.pull_request?.base?.sha
+    const head = payload?.pull_request?.head?.sha
+    if (base && head) {
+      return { type: "range", base, head }
+    }
+  }
+
+  if (eventName === "push") {
+    const before = payload?.before
+    const after = payload?.after
+    if (before && after) {
+      return { type: "push", before, after }
+    }
+  }
+
+  return null
+}
+
+const isZeroSha = (value) => /^0+$/.test(value)
+
+const runGitCommand = (command) =>
+  execSync(command, { encoding: "utf8" })
 
 const getChangedFiles = () => {
   let output = ""
+  const diffRange = resolveDiffRange()
+
   try {
-    output = execSync("git diff --name-only origin/main...HEAD", {
-      encoding: "utf8",
-    })
+    if (diffRange?.type === "range") {
+      output = runGitCommand(
+        `git diff --name-only ${diffRange.base}...${diffRange.head}`,
+      )
+    } else if (diffRange?.type === "push") {
+      if (isZeroSha(diffRange.before)) {
+        output = runGitCommand(
+          `git show --name-only --pretty="" ${diffRange.after}`,
+        )
+      } else {
+        output = runGitCommand(
+          `git diff --name-only ${diffRange.before}...${diffRange.after}`,
+        )
+      }
+    } else {
+      output = runGitCommand("git diff --name-only origin/main...HEAD")
+    }
   } catch (error) {
-    output = execSync("git diff --name-only HEAD~1", { encoding: "utf8" })
+    output = runGitCommand("git diff --name-only HEAD~1")
   }
 
   return output.split("\n").map((line) => line.trim()).filter(Boolean)

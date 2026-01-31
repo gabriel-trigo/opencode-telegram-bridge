@@ -1,5 +1,12 @@
 # opencode-telegram-bridge
 
+## Unreleased
+
+### Patch Changes
+
+- Add `/reboot` command to restart OpenCode and clear cached session mappings.
+- Fix changeset enforcement on main pushes by diffing the GitHub event range.
+
 ## 1.0.2
 
 ### Patch Changes
