@@ -1,5 +1,12 @@
 # opencode-telegram-bridge
 
+## 1.0.4
+
+### Patch Changes
+
+- f23c471: Add /reboot-bridge to restart the Telegram bridge via a configurable command.
+- 6778878: Register Telegram bot commands on startup to enable autocomplete.
+
 ## 1.0.3
 
 ### Patch Changes
