@@ -1,5 +1,14 @@
 # opencode-telegram-bridge
 
+## 1.0.5
+
+### Patch Changes
+
+- 67ba6ee: Add MkDocs Material configuration to serve docs as a website.
+- e44f980: Deploy MkDocs docs site to GitHub Pages via GitHub Actions.
+- 05606bc: Ignore local MkDocs build output directory.
+- f91c4e1: Rename the bridge restart command to /restart to avoid Telegram parsing issues.
+
 ## 1.0.4
 
 ### Patch Changes
