@@ -4,7 +4,8 @@ export type BotConfig = {
   opencode: OpencodeConfig
   handlerTimeoutMs: number
   promptTimeoutMs: number
-  opencodeRestart?: OpencodeRestartConfig
+  opencodeRestart?: RestartCommandConfig
+  bridgeRestart?: RestartCommandConfig
 }
 
 export type OpencodeConfig = {
@@ -13,7 +14,7 @@ export type OpencodeConfig = {
   serverPassword?: string
 }
 
-export type OpencodeRestartConfig = {
+export type RestartCommandConfig = {
   command: string
   timeoutMs: number
 }
@@ -98,6 +99,24 @@ export const loadConfig = (): BotConfig => {
       }
     : undefined
 
+  const bridgeRestartCommand = process.env.OPENCODE_BRIDGE_RESTART_COMMAND?.trim()
+  const bridgeRestartTimeoutMs = parseDurationMs(
+    process.env.OPENCODE_BRIDGE_RESTART_TIMEOUT_MS,
+    "OPENCODE_BRIDGE_RESTART_TIMEOUT_MS",
+  )
+  if (!bridgeRestartCommand && bridgeRestartTimeoutMs !== undefined) {
+    throw new Error(
+      "OPENCODE_BRIDGE_RESTART_TIMEOUT_MS requires OPENCODE_BRIDGE_RESTART_COMMAND",
+    )
+  }
+
+  const bridgeRestart = bridgeRestartCommand
+    ? {
+        command: bridgeRestartCommand,
+        timeoutMs: bridgeRestartTimeoutMs ?? 30_000,
+      }
+    : undefined
+
   const baseConfig: BotConfig = {
     botToken,
     allowedUserId,
@@ -106,12 +125,19 @@ export const loadConfig = (): BotConfig => {
     promptTimeoutMs,
   }
 
+  let config = baseConfig
   if (opencodeRestart) {
-    return {
-      ...baseConfig,
+    config = {
+      ...config,
       opencodeRestart,
     }
   }
+  if (bridgeRestart) {
+    config = {
+      ...config,
+      bridgeRestart,
+    }
+  }
 
-  return baseConfig
+  return config
 }

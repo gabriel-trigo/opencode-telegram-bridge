@@ -3,7 +3,7 @@ import { promisify } from "node:util"
 
 import { Markup, Telegraf } from "telegraf"
 
-import type { BotConfig } from "./config.js"
+import type { BotConfig, RestartCommandConfig } from "./config.js"
 import type { OpencodeBridge, PermissionReply } from "./opencode.js"
 import { createPromptGuard } from "./prompt-guard.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
@@ -137,6 +137,13 @@ export const startBot = (
       })
     }
 
+    if (config.bridgeRestart) {
+      commands.push({
+        command: "reboot-bridge",
+        description: "Restart the Telegram bridge",
+      })
+    }
+
     return commands
   }
 
@@ -158,14 +165,16 @@ export const startBot = (
     return `${trimmed.slice(0, maxLength)}...`
   }
 
-  const restartOpencodeService = async (): Promise<RestartResult> => {
-    if (!config.opencodeRestart) {
+  const runRestartCommand = async (
+    restartConfig: RestartCommandConfig | undefined,
+  ): Promise<RestartResult> => {
+    if (!restartConfig) {
       return { configured: false }
     }
 
     try {
-      const result = await execAsync(config.opencodeRestart.command, {
-        timeout: config.opencodeRestart.timeoutMs,
+      const result = await execAsync(restartConfig.command, {
+        timeout: restartConfig.timeoutMs,
       })
       return {
         configured: true,
@@ -383,7 +392,7 @@ export const startBot = (
       return
     }
 
-    const result = await restartOpencodeService()
+    const result = await runRestartCommand(config.opencodeRestart)
     if (!result.configured) {
       await ctx.reply(
         "Restart command not configured. Set OPENCODE_RESTART_COMMAND to enable this.",
@@ -414,6 +423,44 @@ export const startBot = (
     const stdout = result.stdout
     const detail = stdout ? `\n${stdout}` : ""
     await ctx.reply(`OpenCode restart triggered. Session cache cleared.${detail}`)
+  })
+
+  bot.command("reboot-bridge", async (ctx) => {
+    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+      await ctx.reply("Not authorized.")
+      return
+    }
+
+    if (!config.bridgeRestart) {
+      await ctx.reply(
+        "Restart command not configured. Set OPENCODE_BRIDGE_RESTART_COMMAND to enable this.",
+      )
+      return
+    }
+
+    await ctx.reply("Restarting opencode-telegram-bridge...")
+
+    const result = await runRestartCommand(config.bridgeRestart)
+    if (!result.configured) {
+      await ctx.reply(
+        "Restart command not configured. Set OPENCODE_BRIDGE_RESTART_COMMAND to enable this.",
+      )
+      return
+    }
+
+    if (result.error) {
+      console.error("Failed to restart opencode-telegram-bridge", result.error)
+      const stderr = result.stderr
+      const errorMessage = formatCommandOutput(result.error.message)
+      const detail = stderr ?? errorMessage
+      const suffix = detail ? `\n${detail}` : ""
+      await ctx.reply(`Bridge restart failed.${suffix}`)
+      return
+    }
+
+    if (result.stderr) {
+      console.warn("Bridge restart stderr", { stderr: result.stderr })
+    }
   })
 
   bot.on("callback_query", async (ctx) => {

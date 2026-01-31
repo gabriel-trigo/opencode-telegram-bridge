@@ -9,6 +9,7 @@
 - `/project set <alias>` - set the active project alias for this chat.
 - `/reset` - reset the OpenCode session for the active project.
 - `/reboot` - restart the OpenCode service and clear cached sessions (requires `OPENCODE_RESTART_COMMAND`).
+- `/reboot-bridge` - restart the Telegram bridge (requires `OPENCODE_BRIDGE_RESTART_COMMAND`).
 
 ## Notes
 - Only one prompt is processed at a time per chat.
