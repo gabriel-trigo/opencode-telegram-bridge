@@ -1,0 +1,23 @@
+site_name: OpenCode Telegram Bridge
+site_description: Minimal docs for the OpenCode Telegram Bridge.
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Configuration: configuration.md
+  - Usage: usage.md
+  - Systemd: systemd.md
+  - Release: release.md
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true

@@ -54,6 +54,7 @@ When new commands are added or changed, update this list and the command descrip
 
 ## Useful commands
 - Install dependencies: `npm install`
+- Install docs site deps: `pip install mkdocs-material`
 - Start dev bot (watch mode): `npm run dev`
 - Build: `npm run build`
 - Run built bot: `npm start`
@@ -61,6 +62,8 @@ When new commands are added or changed, update this list and the command descrip
 - Run tests: `npm test`
 - Run tests in watch mode: `npm run test:watch`
 - Run test coverage: `npm run test:coverage`
+- Serve docs site: `mkdocs serve`
+- Build docs site: `mkdocs build`
 - Add a changeset: `npx changeset`
 - Version release: `npm run version`
 - Publish release: `npm run release`

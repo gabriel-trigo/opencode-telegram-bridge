@@ -1,8 +1,10 @@
-# OpenCode Telegram Bridge Docs
+# OpenCode Telegram Bridge
+
+Run a Telegram bot that forwards messages to an OpenCode backend and returns responses. This site is a minimal, markdown-first reference for operating the bridge.
 
 Start here:
-- `installation.md`
-- `configuration.md`
-- `usage.md`
-- `systemd.md`
-- `release.md`
+- Installation
+- Configuration
+- Usage
+- Systemd
+- Release
