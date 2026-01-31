@@ -14,7 +14,7 @@ Set these environment variables in `.env` or in your service environment.
 - `TELEGRAM_HANDLER_TIMEOUT_MS` - Telegraf handler timeout in milliseconds (default: prompt timeout + 30000).
 - `OPENCODE_RESTART_COMMAND` - Command to restart OpenCode when `/reboot` is used (example: `sudo -n systemctl restart opencode`).
 - `OPENCODE_RESTART_TIMEOUT_MS` - Restart command timeout in milliseconds (default: 30000).
-- `OPENCODE_BRIDGE_RESTART_COMMAND` - Command to restart the Telegram bridge when `/reboot-bridge` is used (example: `sudo -n systemctl restart opencode-telegram-bridge`).
+- `OPENCODE_BRIDGE_RESTART_COMMAND` - Command to restart the Telegram bridge when `/restart` is used (example: `sudo -n systemctl restart opencode-telegram-bridge`).
 - `OPENCODE_BRIDGE_RESTART_TIMEOUT_MS` - Restart command timeout in milliseconds (default: 30000).
 
 ## Data storage

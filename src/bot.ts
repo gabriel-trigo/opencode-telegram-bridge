@@ -139,7 +139,7 @@ export const startBot = (
 
     if (config.bridgeRestart) {
       commands.push({
-        command: "reboot-bridge",
+        command: "restart",
         description: "Restart the Telegram bridge",
       })
     }
@@ -425,7 +425,7 @@ export const startBot = (
     await ctx.reply(`OpenCode restart triggered. Session cache cleared.${detail}`)
   })
 
-  bot.command("reboot-bridge", async (ctx) => {
+  bot.command("restart", async (ctx) => {
     if (!isAuthorized(ctx.from, config.allowedUserId)) {
       await ctx.reply("Not authorized.")
       return

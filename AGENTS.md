@@ -41,7 +41,7 @@ Run a Telegram bot that forwards messages to an OpenCode backend and returns res
 - `/project set <alias>` - set the active project alias for this chat.
 - `/reset` - reset the OpenCode session for the active project.
 - `/reboot` - restart the OpenCode service and clear cached sessions (requires `OPENCODE_RESTART_COMMAND`).
-- `/reboot-bridge` - restart the Telegram bridge (requires `OPENCODE_BRIDGE_RESTART_COMMAND`).
+- `/restart` - restart the Telegram bridge (requires `OPENCODE_BRIDGE_RESTART_COMMAND`).
 
 Note: `/reboot` clears the local session-id mapping because we do not yet know
 whether `opencode serve` reliably persists and restores sessions across restarts.
