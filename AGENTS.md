@@ -40,6 +40,11 @@ Run a Telegram bot that forwards messages to an OpenCode backend and returns res
 - `/project remove <alias>` - remove a project alias.
 - `/project set <alias>` - set the active project alias for this chat.
 - `/reset` - reset the OpenCode session for the active project.
+- `/reboot` - restart the OpenCode service and clear cached sessions (requires `OPENCODE_RESTART_COMMAND`).
+
+Note: `/reboot` clears the local session-id mapping because we do not yet know
+whether `opencode serve` reliably persists and restores sessions across restarts.
+Revisit this behavior once persistence is understood and verified.
 
 When new commands are added or changed, update this list and the command descriptions.
 

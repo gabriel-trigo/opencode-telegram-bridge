@@ -1,3 +1,6 @@
+import { exec } from "node:child_process"
+import { promisify } from "node:util"
+
 import { Markup, Telegraf } from "telegraf"
 
 import type { BotConfig } from "./config.js"
@@ -18,6 +21,17 @@ type PendingPermission = {
   directory: string
   summary: string
 }
+
+type RestartResult =
+  | { configured: false }
+  | {
+      configured: true
+      stdout: string | null
+      stderr: string | null
+      error?: Error
+    }
+
+const execAsync = promisify(exec)
 
 const isAuthorized = (user: TelegramUser | undefined, allowedUserId: number) =>
   user?.id === allowedUserId
@@ -104,6 +118,49 @@ export const startBot = (
     }
 
     return Markup.inlineKeyboard([buttons])
+  }
+
+  const formatCommandOutput = (value: string | undefined) => {
+    if (!value) {
+      return null
+    }
+
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return null
+    }
+
+    const maxLength = 800
+    if (trimmed.length <= maxLength) {
+      return trimmed
+    }
+
+    return `${trimmed.slice(0, maxLength)}...`
+  }
+
+  const restartOpencodeService = async (): Promise<RestartResult> => {
+    if (!config.opencodeRestart) {
+      return { configured: false }
+    }
+
+    try {
+      const result = await execAsync(config.opencodeRestart.command, {
+        timeout: config.opencodeRestart.timeoutMs,
+      })
+      return {
+        configured: true,
+        stdout: formatCommandOutput(result.stdout),
+        stderr: formatCommandOutput(result.stderr),
+      }
+    } catch (error) {
+      const failure = error as Error & { stdout?: string; stderr?: string }
+      return {
+        configured: true,
+        error: failure,
+        stdout: formatCommandOutput(failure.stdout),
+        stderr: formatCommandOutput(failure.stderr),
+      }
+    }
   }
 
   opencode.startPermissionEventStream({
@@ -298,6 +355,45 @@ export const startBot = (
     }
 
     await ctx.reply(`No active session to reset for ${project.alias}.`)
+  })
+
+  bot.command("reboot", async (ctx) => {
+    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+      await ctx.reply("Not authorized.")
+      return
+    }
+
+    const result = await restartOpencodeService()
+    if (!result.configured) {
+      await ctx.reply(
+        "Restart command not configured. Set OPENCODE_RESTART_COMMAND to enable this.",
+      )
+      return
+    }
+
+    if (result.error) {
+      console.error("Failed to restart OpenCode", result.error)
+      const stderr = result.stderr
+      const errorMessage = formatCommandOutput(result.error.message)
+      const detail = stderr ?? errorMessage
+      const suffix = detail ? `\n${detail}` : ""
+      await ctx.reply(`OpenCode restart failed.${suffix}`)
+      return
+    }
+
+    // Clear cached session mappings after a restart.
+    // We do not yet know if opencode serve reliably restores sessions across restarts,
+    // so we reset mappings to avoid reusing stale session IDs. Revisit if persistence
+    // is confirmed stable.
+    opencode.resetAllSessions()
+
+    if (result.stderr) {
+      console.warn("OpenCode restart stderr", { stderr: result.stderr })
+    }
+
+    const stdout = result.stdout
+    const detail = stdout ? `\n${stdout}` : ""
+    await ctx.reply(`OpenCode restart triggered. Session cache cleared.${detail}`)
   })
 
   bot.on("callback_query", async (ctx) => {

@@ -52,4 +52,21 @@ describe("persistent session store", () => {
       cleanupTempDbPath(root)
     }
   })
+
+  it("clears all sessions", () => {
+    const { root, dbPath } = createTempDbPath()
+    try {
+      const storeA = createPersistentSessionStore({ dbPath })
+      storeA.setSessionId(1, "/repo/a", "session-a")
+      storeA.setSessionId(2, "/repo/b", "session-b")
+
+      storeA.clearAll()
+
+      const storeB = createPersistentSessionStore({ dbPath })
+      expect(storeB.getSessionId(1, "/repo/a")).toBeUndefined()
+      expect(storeB.getSessionId(2, "/repo/b")).toBeUndefined()
+    } finally {
+      cleanupTempDbPath(root)
+    }
+  })
 })

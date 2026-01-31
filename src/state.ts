@@ -66,6 +66,9 @@ export const createPersistentSessionStore = (
         .run(chatId, projectDir)
       return result.changes > 0
     },
+    clearAll: () => {
+      db.prepare("DELETE FROM chat_sessions").run()
+    },
     getSessionOwner: (sessionId) => {
       const row = db
         .prepare(

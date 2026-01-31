@@ -11,6 +11,7 @@ export type OpencodeBridge = {
     options?: PromptOptions,
   ) => Promise<string>
   resetSession: (chatId: number, projectDir: string) => boolean
+  resetAllSessions: () => void
   getSessionOwner: (sessionId: string) => SessionOwner | null
   replyToPermission: (
     requestId: string,
@@ -26,6 +27,7 @@ export type SessionStore = {
   getSessionId: (chatId: number, projectDir: string) => string | undefined
   setSessionId: (chatId: number, projectDir: string, sessionId: string) => void
   clearSession: (chatId: number, projectDir: string) => boolean
+  clearAll: () => void
   getSessionOwner: (sessionId: string) => SessionOwner | null
 }
 
@@ -106,6 +108,10 @@ export const createSessionStore = (): SessionStore => {
 
       return sessions.delete(sessionKey)
     },
+    clearAll: () => {
+      sessions.clear()
+      owners.clear()
+    },
     getSessionOwner: (sessionId) => owners.get(sessionId) ?? null,
   }
 }
@@ -175,6 +181,9 @@ export const createOpencodeBridge = (
     },
     resetSession(chatId, projectDir) {
       return sessions.clearSession(chatId, projectDir)
+    },
+    resetAllSessions() {
+      sessions.clearAll()
     },
     getSessionOwner(sessionId) {
       return sessions.getSessionOwner(sessionId)

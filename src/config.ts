@@ -4,12 +4,18 @@ export type BotConfig = {
   opencode: OpencodeConfig
   handlerTimeoutMs: number
   promptTimeoutMs: number
+  opencodeRestart?: OpencodeRestartConfig
 }
 
 export type OpencodeConfig = {
   serverUrl: string
   serverUsername: string
   serverPassword?: string
+}
+
+export type OpencodeRestartConfig = {
+  command: string
+  timeoutMs: number
 }
 
 const parseAllowedUserId = (rawValue: string | undefined): number => {
@@ -74,11 +80,38 @@ export const loadConfig = (): BotConfig => {
       "TELEGRAM_HANDLER_TIMEOUT_MS",
     ) ?? promptTimeoutMs + 30_000
 
-  return {
+  const restartCommand = process.env.OPENCODE_RESTART_COMMAND?.trim()
+  const restartTimeoutMs = parseDurationMs(
+    process.env.OPENCODE_RESTART_TIMEOUT_MS,
+    "OPENCODE_RESTART_TIMEOUT_MS",
+  )
+  if (!restartCommand && restartTimeoutMs !== undefined) {
+    throw new Error(
+      "OPENCODE_RESTART_TIMEOUT_MS requires OPENCODE_RESTART_COMMAND",
+    )
+  }
+
+  const opencodeRestart = restartCommand
+    ? {
+        command: restartCommand,
+        timeoutMs: restartTimeoutMs ?? 30_000,
+      }
+    : undefined
+
+  const baseConfig: BotConfig = {
     botToken,
     allowedUserId,
     opencode,
     handlerTimeoutMs,
     promptTimeoutMs,
   }
+
+  if (opencodeRestart) {
+    return {
+      ...baseConfig,
+      opencodeRestart,
+    }
+  }
+
+  return baseConfig
 }

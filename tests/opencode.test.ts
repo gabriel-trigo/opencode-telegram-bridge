@@ -30,4 +30,18 @@ describe("session store", () => {
     expect(store.getSessionOwner("session-a")).toBeNull()
     expect(store.clearSession(1, "/repo/a")).toBe(false)
   })
+
+  it("clears all sessions", () => {
+    const store = createSessionStore()
+
+    store.setSessionId(1, "/repo/a", "session-a")
+    store.setSessionId(2, "/repo/b", "session-b")
+
+    store.clearAll()
+
+    expect(store.getSessionId(1, "/repo/a")).toBeUndefined()
+    expect(store.getSessionId(2, "/repo/b")).toBeUndefined()
+    expect(store.getSessionOwner("session-a")).toBeNull()
+    expect(store.getSessionOwner("session-b")).toBeNull()
+  })
 })
