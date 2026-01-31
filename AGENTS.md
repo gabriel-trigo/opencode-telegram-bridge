@@ -64,6 +64,10 @@ When new commands are added or changed, update this list and the command descrip
 - Run test coverage: `npm run test:coverage`
 - Serve docs site: `mkdocs serve`
 - Build docs site: `mkdocs build`
+
+## Docs hosting
+- GitHub Pages deploys the MkDocs site from `docs/` on pushes to `main`.
+- URL: https://gabriel-trigo.github.io/opencode-telegram-bridge/
 - Add a changeset: `npx changeset`
 - Version release: `npm run version`
 - Publish release: `npm run release`

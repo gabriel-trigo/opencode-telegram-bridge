@@ -1,5 +1,6 @@
 site_name: OpenCode Telegram Bridge
 site_description: Minimal docs for the OpenCode Telegram Bridge.
+site_url: https://gabriel-trigo.github.io/opencode-telegram-bridge/
 docs_dir: docs
 
 theme:
