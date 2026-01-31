@@ -120,6 +120,26 @@ export const startBot = (
     return Markup.inlineKeyboard([buttons])
   }
 
+  const buildBotCommands = () => {
+    const commands = [
+      { command: "start", description: "Confirm the bot is online" },
+      {
+        command: "project",
+        description: "Manage project aliases (list/current/add/remove/set)",
+      },
+      { command: "reset", description: "Reset the active project session" },
+    ]
+
+    if (config.opencodeRestart) {
+      commands.push({
+        command: "reboot",
+        description: "Restart OpenCode and clear cached sessions",
+      })
+    }
+
+    return commands
+  }
+
   const formatCommandOutput = (value: string | undefined) => {
     if (!value) {
       return null
@@ -550,5 +570,8 @@ export const startBot = (
   })
 
   bot.launch()
+  void bot.telegram
+    .setMyCommands(buildBotCommands())
+    .catch((error) => console.error("Failed to set bot commands", error))
   return bot
 }
