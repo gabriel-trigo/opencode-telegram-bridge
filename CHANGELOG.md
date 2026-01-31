@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.0.3
+
+### Patch Changes
+
+- b8ebe71: Add the /reboot command for restarting OpenCode and improve changeset checks on main pushes.
+
 ## Unreleased
 
 ### Patch Changes
