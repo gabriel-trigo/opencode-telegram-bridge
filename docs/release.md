@@ -2,7 +2,63 @@
 
 This project is published as an npm package.
 
-## Changesets workflow
+## Mental model
+Every CI run (PRs and pushes) requires a changeset for non-doc changes or it
+fails. A push to `main` creates or updates the release PR. A merged PR leads to
+a push to `main`, so it also updates the release PR. The release PR accumulates
+changesets until it is merged. When the release PR is merged, npm publishes a
+new version and a GitHub release is created using the accumulated changesets.
+
+## CI + release flowcharts
+
+### Pull request opened
+```
+PR opened/updated
+        |
+        v
+CI workflow (pull_request)
+  |
+  +--> npm ci
+  +--> changeset check (diff base...head)
+  |      |
+  |      +--> relevant change + no changeset -> FAIL
+  |      +--> docs-only or has changeset     -> OK
+  +--> typecheck + tests + build
+        |
+        v
+      Status checks gate merge to main
+```
+
+### Push to main
+```
+Push to main
+   |
+   v
+CI workflow (push)
+  |
+  +--> npm ci
+  +--> changeset check (diff before...after)
+  |      |
+  |      +--> relevant change + no changeset -> FAIL
+  |      +--> docs-only or has changeset     -> OK
+  +--> typecheck + tests + build
+  |
+  v
+Release workflow (push)
+  |
+  +--> changesets/action
+         |
+         +--> changesets present?
+         |      |
+         |      +--> yes: create/update release PR (changeset-release/main)
+         |      |        (no publish)
+         |      |
+         |      +--> no: run `npm run release` (publish to npm)
+         |
+         +--> if published: create GitHub release tag (unless it already exists)
+```
+
+## Manual release (local)
 1. Add a changeset for your change:
 
 ```bash
@@ -23,21 +79,10 @@ npm run release
 
 The `prepublishOnly` script runs the build to ensure `dist/` is included.
 
-## Automated releases (GitHub Actions)
-This repository ships a release workflow that:
-- Opens a release PR when changesets are present.
-- Publishes to npm when that PR is merged.
-- Creates a GitHub release tagged with the published version.
-
-### Required setup
+## Required setup (GitHub Actions)
 - Configure npm Trusted Publishing for this repo and workflow file (`release.yml`).
 - The workflow requires `id-token: write` permission to publish via OIDC.
 - npm CLI 11.5.1+ is required for trusted publishing.
-
-### Flow
-1. Merge changes with a changeset into `main`.
-2. The workflow opens a release PR with version + changelog updates.
-3. Merge the release PR to publish and create the GitHub release.
 
 ## CI enforcement
 CI fails if a relevant code change lands without a `.changeset/*.md` file.
@@ -54,9 +99,9 @@ pending changesets are read and the highest required bump wins.
 The changelog is generated from the text in the changeset files, not from
 commits. Each changeset contributes a short release note entry.
 
-### Do commits or pushes equal a version?
-No. A version is created only when you run `npm run version` (or when an
-automated release does the same). Multiple commits can be part of one release.
+### Does each merged PR cause a new package version?
+No. Merged PRs with changesets update the release PR. A new version is published
+only when the release PR is merged.
 
 ### What happens if I push to main without a changeset?
 CI fails. Add a changeset in a follow-up commit and push again. Do not rewrite
@@ -65,8 +110,3 @@ history on main.
 ### Do I need one changeset per commit or per push?
 No. You need one changeset per release-worthy change (often one per PR). A
 single changeset can cover multiple commits.
-
-### When are tags created?
-Tags are created when you run the release process (for example, after
-`npm run version` and `npm publish`). If CI fails due to a missing changeset,
-no tag is created yet.
