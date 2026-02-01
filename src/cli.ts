@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import readline from "node:readline/promises"
 import { stdin, stdout } from "node:process"
+import { fileURLToPath } from "node:url"
 
 import { runBot } from "./run.js"
 
@@ -24,16 +25,9 @@ const runCommand = (command: string, args: string[]) => {
 }
 
 const resolveExecStart = () => {
-  const result = spawnSync("sh", ["-c", "command -v opencode-telegram-bridge"], {
-    encoding: "utf8",
-  })
-
-  const execStart = result.stdout.trim()
-  if (!execStart || result.status !== 0) {
-    throw new Error("opencode-telegram-bridge not found in PATH")
-  }
-
-  return execStart
+  const nodePath = process.execPath
+  const cliPath = fileURLToPath(import.meta.url)
+  return { nodePath, cliPath }
 }
 
 const readAnswer = async (
@@ -80,7 +74,11 @@ const writeUnitFile = (unitPath: string, content: string) => {
   fs.writeFileSync(unitPath, content, "utf8")
 }
 
-const buildUnitFile = (envPath: string, execStart: string) => `
+const buildUnitFile = (
+  envPath: string,
+  nodePath: string,
+  cliPath: string,
+) => `
 [Unit]
 Description=OpenCode Telegram Bridge
 After=network-online.target
@@ -89,7 +87,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=${envPath}
-ExecStart=${execStart}
+ExecStart=${nodePath} ${cliPath}
 Restart=on-failure
 RestartSec=3
 
@@ -151,7 +149,7 @@ const runSetupWizard = async () => {
   const opencodeRestartCommand = await readAnswer("OPENCODE_RESTART_COMMAND", {})
   const opencodeRestartTimeoutMs = opencodeRestartCommand ? "30000" : ""
 
-  const execStart = resolveExecStart()
+  const { nodePath, cliPath } = resolveExecStart()
   writeEnvFile(envPath, {
     TELEGRAM_BOT_TOKEN: botToken,
     TELEGRAM_ALLOWED_USER_ID: allowedUserId,
@@ -167,7 +165,7 @@ const runSetupWizard = async () => {
     OPENCODE_BRIDGE_RESTART_TIMEOUT_MS: "30000",
   })
 
-  const unitFile = buildUnitFile(envPath, execStart)
+  const unitFile = buildUnitFile(envPath, nodePath, cliPath)
   writeUnitFile(unitPath, unitFile)
 
   runCommand("systemctl", ["--user", "daemon-reload"])
