@@ -16,7 +16,6 @@ nav:
   - Configuration: configuration.md
   - Usage: usage.md
   - Systemd: systemd.md
-  - Release: release.md
 
 markdown_extensions:
   - admonition

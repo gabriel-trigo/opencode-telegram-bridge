@@ -1,6 +1,6 @@
 # Configuration
 
-Set these environment variables in `.env` or in your service environment.
+Set these environment variables in your shell or service environment.
 
 ## Required
 - `TELEGRAM_BOT_TOKEN` - Telegram bot token.

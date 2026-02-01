@@ -5,6 +5,8 @@ Run a Telegram bot that forwards messages to an OpenCode backend and returns res
 
 ## Documentation guidelines
 - Keep documentation (README, docs, AGENTS) lean, extremely clear, and always up to date.
+- Each docs page is a commitment to keep it current; outdated or incorrect docs are worse than no docs.
+- The docs in `docs/` are for end users, not contributors. They should help users run the bridge without confusion and resolve confusion quickly.
 
 ## Architecture
 - Run OpenCode in server mode (`opencode serve`) on the same host, bound to localhost.

@@ -3,11 +3,10 @@
 This project ships a systemd unit template in `systemd/opencode-telegram-bridge.service`.
 
 ## Install
-1. Build the project:
+1. Install the package:
 
 ```bash
-npm install
-npm run build
+npm install -g opencode-telegram-bridge
 ```
 
 2. Copy the service and env files:
