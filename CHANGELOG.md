@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.2.0
+
+### Minor Changes
+
+- eb7615d: Allow the setup wizard to install an OpenCode user service.
+
 ## 1.1.1
 
 ### Patch Changes
