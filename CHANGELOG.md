@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.2.1
+
+### Patch Changes
+
+- f45329d: Harden setup wizard secret handling and linger messaging.
+
 ## 1.2.0
 
 ### Minor Changes
