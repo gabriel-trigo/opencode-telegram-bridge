@@ -184,7 +184,19 @@ export const startBot = (
         stderr: formatCommandOutput(result.stderr),
       }
     } catch (error) {
-      const failure = error as Error & { stdout?: string; stderr?: string }
+      const failure = error as Error & {
+        signal?: string
+        stdout?: string
+        stderr?: string
+      }
+      if (failure.signal === "SIGTERM") {
+        return {
+          configured: true,
+          stdout: formatCommandOutput(failure.stdout),
+          stderr: formatCommandOutput(failure.stderr),
+        }
+      }
+
       return {
         configured: true,
         error: failure,
