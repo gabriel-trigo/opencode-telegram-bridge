@@ -10,6 +10,13 @@
 npm install -g opencode-telegram-bridge
 ```
 
+## Setup (Linux systemd)
+```bash
+opencode-telegram-bridge setup
+```
+
+Setup currently supports Linux systemd only. On other platforms, run the bot manually.
+
 ## Run the bot
 ```bash
 opencode-telegram-bridge

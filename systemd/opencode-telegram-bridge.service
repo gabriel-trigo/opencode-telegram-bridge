@@ -5,10 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/opencode-telegram-bridge.env
+EnvironmentFile=%h/.config/opencode-telegram-bridge/opencode-telegram-bridge.env
 ExecStart=/usr/bin/opencode-telegram-bridge
 Restart=on-failure
 RestartSec=3
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
