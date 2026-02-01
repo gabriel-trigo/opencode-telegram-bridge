@@ -720,8 +720,14 @@ export const startBot = (
   })
 
   bot.launch()
+  const commands = buildBotCommands()
   void bot.telegram
-    .setMyCommands(buildBotCommands())
+    .setMyCommands(commands)
     .catch((error) => console.error("Failed to set bot commands", error))
+  void bot.telegram
+    .setMyCommands(commands, { scope: { type: "all_private_chats" } })
+    .catch((error) =>
+      console.error("Failed to set private chat commands", error),
+    )
   return bot
 }
