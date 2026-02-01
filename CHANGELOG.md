@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.1.0
+
+### Minor Changes
+
+- ec12ca8: Add a setup wizard and default to user systemd services.
+
 ## 1.0.8
 
 ### Patch Changes
