@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.1.1
+
+### Patch Changes
+
+- a305ef7: Pin the Node binary in systemd user units.
+
 ## 1.1.0
 
 ### Minor Changes
