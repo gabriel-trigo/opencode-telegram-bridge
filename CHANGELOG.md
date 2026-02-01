@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.0.7
+
+### Patch Changes
+
+- 6bcc874: Register bot commands for private chats.
+
 ## 1.0.6
 
 ### Patch Changes
