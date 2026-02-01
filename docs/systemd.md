@@ -7,6 +7,8 @@ This project ships a user systemd unit template in `systemd/opencode-telegram-br
 opencode-telegram-bridge setup
 ```
 
+The wizard can optionally install a user service for `opencode serve` as well.
+
 ## Manual install
 1. Install the package:
 

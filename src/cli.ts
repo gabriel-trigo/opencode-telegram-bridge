@@ -30,6 +30,19 @@ const resolveExecStart = () => {
   return { nodePath, cliPath }
 }
 
+const resolveOpencodePath = () => {
+  const result = spawnSync("sh", ["-c", "command -v opencode"], {
+    encoding: "utf8",
+  })
+
+  const opencodePath = result.stdout.trim()
+  if (!opencodePath || result.status !== 0) {
+    throw new Error("opencode CLI not found in PATH")
+  }
+
+  return opencodePath
+}
+
 const readAnswer = async (
   prompt: string,
   options: { required?: boolean; defaultValue?: string } = {},
@@ -95,6 +108,23 @@ RestartSec=3
 WantedBy=default.target
 `
 
+const buildOpencodeUnitFile = (opencodePath: string, nodeDir: string) => `
+[Unit]
+Description=OpenCode Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PATH=${nodeDir}:/usr/local/bin:/usr/bin:/bin
+ExecStart=${opencodePath} serve
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+`
+
 const runSetupWizard = async () => {
   if (process.platform !== "linux") {
     die("Setup currently supports Linux systemd only. See the docs for manual setup.")
@@ -122,7 +152,24 @@ const runSetupWizard = async () => {
     "opencode-telegram-bridge.service",
   )
 
-  if (fs.existsSync(envPath) || fs.existsSync(unitPath)) {
+  const installOpencode = await confirmAnswer(
+    "Set up OpenCode server as a user service?",
+    false,
+  )
+
+  const opencodeUnitPath = path.join(
+    homeDir,
+    ".config",
+    "systemd",
+    "user",
+    "opencode.service",
+  )
+  const existingPaths = [envPath, unitPath]
+  if (installOpencode) {
+    existingPaths.push(opencodeUnitPath)
+  }
+
+  if (existingPaths.some((filePath) => fs.existsSync(filePath))) {
     const overwrite = await confirmAnswer(
       "Existing config found. Overwrite?",
       false,
@@ -131,6 +178,8 @@ const runSetupWizard = async () => {
       die("Setup cancelled.")
     }
   }
+
+  const opencodePath = installOpencode ? resolveOpencodePath() : null
 
   const botToken = await readAnswer("TELEGRAM_BOT_TOKEN", { required: true })
   const allowedUserId = await readAnswer("TELEGRAM_ALLOWED_USER_ID", {
@@ -146,7 +195,9 @@ const runSetupWizard = async () => {
     defaultValue: "opencode",
   })
   const serverPassword = await readAnswer("OPENCODE_SERVER_PASSWORD", {})
-  const opencodeRestartCommand = await readAnswer("OPENCODE_RESTART_COMMAND", {})
+  const opencodeRestartCommand = installOpencode
+    ? "systemctl --user restart opencode --no-block"
+    : await readAnswer("OPENCODE_RESTART_COMMAND", {})
   const opencodeRestartTimeoutMs = opencodeRestartCommand ? "30000" : ""
 
   const { nodePath, cliPath } = resolveExecStart()
@@ -168,11 +219,20 @@ const runSetupWizard = async () => {
   const unitFile = buildUnitFile(envPath, nodePath, cliPath)
   writeUnitFile(unitPath, unitFile)
 
+  const nodeDir = path.dirname(nodePath)
+  if (installOpencode && opencodePath) {
+    const opencodeUnitFile = buildOpencodeUnitFile(opencodePath, nodeDir)
+    writeUnitFile(opencodeUnitPath, opencodeUnitFile)
+  }
+
   runCommand("systemctl", ["--user", "daemon-reload"])
+  if (installOpencode) {
+    runCommand("systemctl", ["--user", "enable", "--now", "opencode"])
+  }
   runCommand("systemctl", ["--user", "enable", "--now", "opencode-telegram-bridge"])
 
   const enableLinger = await confirmAnswer(
-    "Enable linger so the service starts on boot without login?",
+    "Enable linger so services start on boot without login?",
     false,
   )
   if (enableLinger) {
