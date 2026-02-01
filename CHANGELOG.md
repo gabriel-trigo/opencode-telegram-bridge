@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.0.8
+
+### Patch Changes
+
+- 9b398c8: Exclude AGENTS.md from changeset enforcement.
+
 ## 1.0.7
 
 ### Patch Changes
