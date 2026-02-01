@@ -7,6 +7,8 @@
 - `/project add <alias> <path>` - add a project alias.
 - `/project remove <alias>` - remove a project alias.
 - `/project set <alias>` - set the active project alias for this chat.
+- `/model` - show the active model for this chat (after the first reply).
+- `/model list` - list available models from the OpenCode server.
 - `/reset` - reset the OpenCode session for the active project.
 - `/reboot` - restart the OpenCode service and clear cached sessions (requires `OPENCODE_RESTART_COMMAND`).
 - `/restart` - restart the Telegram bridge (requires `OPENCODE_BRIDGE_RESTART_COMMAND`).

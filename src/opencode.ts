@@ -1,5 +1,5 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
-import type { GlobalEvent, Part, PermissionRequest } from "@opencode-ai/sdk/v2"
+import type { GlobalEvent, Part, PermissionRequest, Provider } from "@opencode-ai/sdk/v2"
 
 import type { OpencodeConfig } from "./config.js"
 
@@ -9,10 +9,11 @@ export type OpencodeBridge = {
     text: string,
     projectDir: string,
     options?: PromptOptions,
-  ) => Promise<string>
+  ) => Promise<PromptResult>
   resetSession: (chatId: number, projectDir: string) => boolean
   resetAllSessions: () => void
   getSessionOwner: (sessionId: string) => SessionOwner | null
+  listModels: (projectDir: string) => Promise<Provider[]>
   replyToPermission: (
     requestId: string,
     reply: PermissionReply,
@@ -37,6 +38,7 @@ export type OpencodeBridgeOptions = {
 
 export type PromptOptions = {
   signal?: AbortSignal
+  model?: ModelRef
 }
 
 export type PermissionReply = "once" | "always" | "reject"
@@ -44,6 +46,16 @@ export type PermissionReply = "once" | "always" | "reject"
 export type SessionOwner = {
   chatId: number
   projectDir: string
+}
+
+export type ModelRef = {
+  providerID: string
+  modelID: string
+}
+
+export type PromptResult = {
+  reply: string
+  model: ModelRef | null
 }
 
 export type PermissionEventHandlers = {
@@ -163,21 +175,34 @@ export const createOpencodeBridge = (
         ? { signal: options.signal }
         : undefined
 
-      const responseResult = await client.session.prompt(
-        {
-          sessionID: sessionId,
-          directory: projectDir,
-          parts: [{ type: "text", text }],
-        },
-        requestOptions,
-      )
+      const body: {
+        sessionID: string
+        directory: string
+        model?: ModelRef
+        parts: Array<{ type: "text"; text: string }>
+      } = {
+        sessionID: sessionId,
+        directory: projectDir,
+        parts: [{ type: "text", text }],
+      }
+
+      if (options.model) {
+        body.model = options.model
+      }
+
+      const responseResult = await client.session.prompt(body, requestOptions)
       const response = requireData(responseResult, "session.prompt")
       const reply = extractText(response.parts)
       if (!reply) {
-        return "OpenCode returned no text output."
+        return { reply: "OpenCode returned no text output.", model: null }
       }
 
-      return reply
+      const info = response.info
+      const model = info
+        ? { providerID: info.providerID, modelID: info.modelID }
+        : null
+
+      return { reply, model }
     },
     resetSession(chatId, projectDir) {
       return sessions.clearSession(chatId, projectDir)
@@ -187,6 +212,11 @@ export const createOpencodeBridge = (
     },
     getSessionOwner(sessionId) {
       return sessions.getSessionOwner(sessionId)
+    },
+    async listModels(projectDir) {
+      const result = await client.config.providers({ directory: projectDir })
+      const data = requireData(result, "config.providers")
+      return data.providers
     },
     async replyToPermission(requestId, reply, directory) {
       const parameters = directory

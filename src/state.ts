@@ -1,10 +1,17 @@
 import { createDatabase, type StoreOptions } from "./storage.js"
-import type { SessionOwner, SessionStore } from "./opencode.js"
+import type { ModelRef, SessionOwner, SessionStore } from "./opencode.js"
 
 export type ChatProjectStore = {
   getActiveAlias: (chatId: number) => string | null
   setActiveAlias: (chatId: number, alias: string) => void
   clearActiveAlias: (chatId: number) => boolean
+}
+
+export type ChatModelStore = {
+  getModel: (chatId: number, projectDir: string) => ModelRef | null
+  setModel: (chatId: number, projectDir: string, model: ModelRef) => void
+  clearModel: (chatId: number, projectDir: string) => boolean
+  clearAll: () => void
 }
 
 export const createChatProjectStore = (
@@ -84,6 +91,48 @@ export const createPersistentSessionStore = (
         chatId: row.chat_id,
         projectDir: row.project_dir,
       } satisfies SessionOwner
+    },
+  }
+}
+
+export const createChatModelStore = (
+  options: StoreOptions = {},
+): ChatModelStore => {
+  const db = createDatabase(options)
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS chat_models (chat_id INTEGER NOT NULL, project_dir TEXT NOT NULL, provider_id TEXT NOT NULL, model_id TEXT NOT NULL, PRIMARY KEY (chat_id, project_dir))",
+  )
+
+  return {
+    getModel: (chatId, projectDir) => {
+      const row = db
+        .prepare(
+          "SELECT provider_id, model_id FROM chat_models WHERE chat_id = ? AND project_dir = ?",
+        )
+        .get(chatId, projectDir) as
+        | { provider_id: string; model_id: string }
+        | undefined
+      if (!row) {
+        return null
+      }
+
+      return { providerID: row.provider_id, modelID: row.model_id }
+    },
+    setModel: (chatId, projectDir, model) => {
+      db.prepare(
+        "INSERT INTO chat_models (chat_id, project_dir, provider_id, model_id) VALUES (?, ?, ?, ?) ON CONFLICT(chat_id, project_dir) DO UPDATE SET provider_id = excluded.provider_id, model_id = excluded.model_id",
+      ).run(chatId, projectDir, model.providerID, model.modelID)
+    },
+    clearModel: (chatId, projectDir) => {
+      const result = db
+        .prepare(
+          "DELETE FROM chat_models WHERE chat_id = ? AND project_dir = ?",
+        )
+        .run(chatId, projectDir)
+      return result.changes > 0
+    },
+    clearAll: () => {
+      db.prepare("DELETE FROM chat_models").run()
     },
   }
 }

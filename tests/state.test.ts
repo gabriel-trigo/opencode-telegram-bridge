@@ -5,6 +5,7 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 
 import {
+  createChatModelStore,
   createChatProjectStore,
   createPersistentSessionStore,
 } from "../src/state.js"
@@ -28,6 +29,46 @@ describe("chat project store", () => {
       const storeB = createChatProjectStore({ dbPath })
       expect(storeB.getActiveAlias(100)).toBe("alpha")
       expect(storeB.getActiveAlias(200)).toBeNull()
+    } finally {
+      cleanupTempDbPath(root)
+    }
+  })
+})
+
+describe("chat model store", () => {
+  it("persists models by chat and project", () => {
+    const { root, dbPath } = createTempDbPath()
+    try {
+      const storeA = createChatModelStore({ dbPath })
+      storeA.setModel(1, "/repo/a", {
+        providerID: "anthropic",
+        modelID: "claude-3-5-sonnet",
+      })
+
+      const storeB = createChatModelStore({ dbPath })
+      expect(storeB.getModel(1, "/repo/a")).toEqual({
+        providerID: "anthropic",
+        modelID: "claude-3-5-sonnet",
+      })
+      expect(storeB.getModel(1, "/repo/b")).toBeNull()
+    } finally {
+      cleanupTempDbPath(root)
+    }
+  })
+
+  it("clears stored models", () => {
+    const { root, dbPath } = createTempDbPath()
+    try {
+      const storeA = createChatModelStore({ dbPath })
+      storeA.setModel(1, "/repo/a", {
+        providerID: "anthropic",
+        modelID: "claude-3-5-sonnet",
+      })
+
+      storeA.clearAll()
+
+      const storeB = createChatModelStore({ dbPath })
+      expect(storeB.getModel(1, "/repo/a")).toBeNull()
     } finally {
       cleanupTempDbPath(root)
     }

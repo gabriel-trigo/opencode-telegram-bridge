@@ -7,7 +7,7 @@ import type { BotConfig, RestartCommandConfig } from "./config.js"
 import type { OpencodeBridge, PermissionReply } from "./opencode.js"
 import { createPromptGuard } from "./prompt-guard.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
-import type { ChatProjectStore } from "./state.js"
+import type { ChatModelStore, ChatProjectStore } from "./state.js"
 import { splitTelegramMessage } from "./telegram.js"
 
 type TelegramUser = {
@@ -53,6 +53,7 @@ export const startBot = (
   opencode: OpencodeBridge,
   projects: ProjectStore,
   chatProjects: ChatProjectStore,
+  chatModels: ChatModelStore,
 ) => {
   const bot = new Telegraf(config.botToken, {
     handlerTimeout: config.handlerTimeoutMs,
@@ -127,6 +128,7 @@ export const startBot = (
         command: "project",
         description: "Manage project aliases (list/current/add/remove/set)",
       },
+      { command: "model", description: "Show or list available models" },
       { command: "reset", description: "Reset the active project session" },
     ]
 
@@ -356,6 +358,86 @@ export const startBot = (
     }
   })
 
+  bot.command("model", async (ctx) => {
+    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+      await ctx.reply("Not authorized.")
+      return
+    }
+
+    const chatId = ctx.chat?.id
+    if (!chatId) {
+      console.warn("Missing chat id for incoming model command")
+      await ctx.reply("Missing chat context.")
+      return
+    }
+
+    const activeAlias = getChatProjectAlias(chatId)
+    const project = projects.getProject(activeAlias)
+    if (!project) {
+      console.error("Missing project for chat", { chatId, activeAlias })
+      await ctx.reply("Missing project configuration.")
+      return
+    }
+
+    const messageText = ctx.message?.text ?? ""
+    const parts = messageText.trim().split(/\s+/)
+    parts.shift()
+
+    const subcommand = parts[0] ?? "current"
+
+    try {
+      switch (subcommand) {
+        case "list": {
+          const providers = await opencode.listModels(project.path)
+          const lines = ["Available models:"]
+          const providerEntries = [...providers].sort((a, b) =>
+            a.id.localeCompare(b.id),
+          )
+          for (const provider of providerEntries) {
+            const modelEntries = Object.entries(provider.models).sort((a, b) =>
+              a[0].localeCompare(b[0]),
+            )
+            for (const [modelId, model] of modelEntries) {
+              const label = model?.name
+                ? `${provider.id}/${modelId} (${model.name})`
+                : `${provider.id}/${modelId}`
+              lines.push(label)
+            }
+          }
+
+          if (lines.length === 1) {
+            lines.push("No models available.")
+          }
+
+          await sendReply(chatId, ctx.message?.message_id, lines.join("\n"))
+          return
+        }
+        case "current": {
+          const model = chatModels.getModel(chatId, project.path)
+          if (!model) {
+            await ctx.reply(
+              "Model unavailable. This chat hasn't started a session yet, so the model can't be determined.",
+            )
+            return
+          }
+
+          await ctx.reply(`Current model: ${model.providerID}/${model.modelID}`)
+          return
+        }
+        default: {
+          await ctx.reply("Usage: /model [list]")
+        }
+      }
+    } catch (error) {
+      console.error("Failed to handle /model command", error)
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Model command failed. Check server logs."
+      await ctx.reply(message)
+    }
+  })
+
   bot.command("reset", async (ctx) => {
     if (!isAuthorized(ctx.from, config.allowedUserId)) {
       await ctx.reply("Not authorized.")
@@ -378,6 +460,7 @@ export const startBot = (
     }
 
     const didReset = opencode.resetSession(chatId, project.path)
+    chatModels.clearModel(chatId, project.path)
     if (didReset) {
       await ctx.reply(`Session reset for ${project.alias}.`)
       return
@@ -415,6 +498,7 @@ export const startBot = (
     // so we reset mappings to avoid reusing stale session IDs. Revisit if persistence
     // is confirmed stable.
     opencode.resetAllSessions()
+    chatModels.clearAll()
 
     if (result.stderr) {
       console.warn("OpenCode restart stderr", { stderr: result.stderr })
@@ -585,14 +669,21 @@ export const startBot = (
 
     void (async () => {
       try {
-        const reply = await opencode.promptFromChat(
+        const storedModel = chatModels.getModel(chatId, project.path)
+        const promptOptions = storedModel
+          ? { signal: abortController.signal, model: storedModel }
+          : { signal: abortController.signal }
+        const result = await opencode.promptFromChat(
           chatId,
           text,
           project.path,
-          { signal: abortController.signal },
+          promptOptions,
         )
+        if (!storedModel && result.model) {
+          chatModels.setModel(chatId, project.path, result.model)
+        }
         if (!timedOut) {
-          await sendReply(chatId, replyToMessageId, reply)
+          await sendReply(chatId, replyToMessageId, result.reply)
         }
       } catch (error) {
         console.error("Failed to send prompt to OpenCode", error)
