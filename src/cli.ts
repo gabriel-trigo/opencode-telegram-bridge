@@ -63,6 +63,50 @@ const readAnswer = async (
   return answer
 }
 
+const readSecret = async (
+  prompt: string,
+  options: { required?: boolean; defaultValue?: string } = {},
+) => {
+  const rl = readline.createInterface({
+    input: stdin,
+    output: stdout,
+    terminal: true,
+  })
+  const suffix = options.defaultValue ? ` (${options.defaultValue})` : ""
+  const questionPrompt = `${prompt}${suffix}: `
+  const masked = rl as ReturnType<typeof readline.createInterface> & {
+    stdoutMuted?: boolean
+    _writeToOutput?: (value: string) => void
+  }
+  const write = masked._writeToOutput?.bind(masked)
+  if (write) {
+    masked._writeToOutput = (value) => {
+      if (!masked.stdoutMuted || value.includes(questionPrompt)) {
+        write(value)
+        return
+      }
+      write("*")
+    }
+    masked.stdoutMuted = true
+  }
+  const answer = (await rl.question(questionPrompt)).trim()
+  if (masked.stdoutMuted) {
+    masked.stdoutMuted = false
+    stdout.write("\n")
+  }
+  rl.close()
+
+  if (!answer && options.defaultValue) {
+    return options.defaultValue
+  }
+
+  if (!answer && options.required) {
+    throw new Error(`Missing ${prompt}`)
+  }
+
+  return answer
+}
+
 const confirmAnswer = async (prompt: string, defaultValue = false) => {
   const rl = readline.createInterface({ input: stdin, output: stdout })
   const suffix = defaultValue ? "(Y/n)" : "(y/N)"
@@ -79,7 +123,11 @@ const confirmAnswer = async (prompt: string, defaultValue = false) => {
 const writeEnvFile = (envPath: string, values: Record<string, string>) => {
   const lines = Object.entries(values).map(([key, value]) => `${key}=${value}`)
   fs.mkdirSync(path.dirname(envPath), { recursive: true })
-  fs.writeFileSync(envPath, `${lines.join("\n")}\n`, "utf8")
+  fs.writeFileSync(envPath, `${lines.join("\n")}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  })
+  fs.chmodSync(envPath, 0o600)
 }
 
 const writeUnitFile = (unitPath: string, content: string) => {
@@ -181,7 +229,7 @@ const runSetupWizard = async () => {
 
   const opencodePath = installOpencode ? resolveOpencodePath() : null
 
-  const botToken = await readAnswer("TELEGRAM_BOT_TOKEN", { required: true })
+  const botToken = await readSecret("TELEGRAM_BOT_TOKEN", { required: true })
   const allowedUserId = await readAnswer("TELEGRAM_ALLOWED_USER_ID", {
     required: true,
   })
@@ -194,7 +242,7 @@ const runSetupWizard = async () => {
   const serverUsername = await readAnswer("OPENCODE_SERVER_USERNAME", {
     defaultValue: "opencode",
   })
-  const serverPassword = await readAnswer("OPENCODE_SERVER_PASSWORD", {})
+  const serverPassword = await readSecret("OPENCODE_SERVER_PASSWORD", {})
   const opencodeRestartCommand = installOpencode
     ? "systemctl --user restart opencode --no-block"
     : await readAnswer("OPENCODE_RESTART_COMMAND", {})
@@ -243,9 +291,13 @@ const runSetupWizard = async () => {
     })
     if (result.status !== 0) {
       console.warn(
-        "Failed to enable linger. Run: sudo loginctl enable-linger",
+        `Linger could not be enabled. Services will start on login only. Run: sudo loginctl enable-linger ${user}`,
       )
+    } else {
+      console.log(`Linger enabled for ${user}. Services will start on boot.`)
     }
+  } else {
+    console.log("Linger not enabled. Services will start on login.")
   }
 
   console.log("Setup complete. Service is running.")
