@@ -22,30 +22,6 @@ You still need OpenCode running separately:
 opencode serve
 ```
 
-## Develop (for contributors)
-1. Install dependencies:
-
-```bash
-npm install
-```
-
-2. Create `.env` from the example:
-
-```bash
-cp .env.example .env
-```
-
-3. Start OpenCode server in another terminal:
-
-```bash
-opencode serve
-```
-
-4. Run the bot:
-
-```bash
-npm run dev
-```
-
-## Releases
-This project uses Changesets. See `docs/release.md`.
+## Documentation
+See the docs for configuration, usage, and systemd setup:
+https://gabriel-trigo.github.io/opencode-telegram-bridge/

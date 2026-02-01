@@ -80,7 +80,8 @@ const isChangesetFile = (file) =>
 const isIgnoredFile = (file) =>
   file.startsWith("docs/") ||
   file.startsWith(".github/") ||
-  file === "README.md"
+  file === "README.md" ||
+  file === "AGENTS.md"
 
 const changedFiles = getChangedFiles()
 const hasChangeset = changedFiles.some(isChangesetFile)
