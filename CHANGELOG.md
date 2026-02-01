@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.0.6
+
+### Patch Changes
+
+- 040b737: Add /model commands and persist model selection per chat project.
+
 ## 1.0.5
 
 ### Patch Changes
