@@ -3,3 +3,7 @@ dist/
 site/
 .env
 .DS_Store
+
+# OpenCode project config (developer-local)
+opencode.json
+opencode.jsonc
