@@ -1,0 +1,1501 @@
+import { beforeEach, describe, expect, it, vi } from "vitest"
+
+vi.mock("node:child_process", () => {
+  return {
+    exec: vi.fn(),
+  }
+})
+
+type TelegrafMockState = {
+  lastBot: {
+    telegram: {
+      sendMessage: ReturnType<typeof vi.fn>
+      editMessageText: ReturnType<typeof vi.fn>
+      setMyCommands: ReturnType<typeof vi.fn>
+    }
+    dispatchStart: (ctx: any) => Promise<void>
+    dispatchCommand: (command: string, ctx: any) => Promise<void>
+    dispatchOn: (event: string, ctx: any) => Promise<void>
+  } | null
+}
+
+vi.mock("telegraf", () => {
+  const state: TelegrafMockState = { lastBot: null }
+  ;(globalThis as any).__telegrafMockState = state
+
+  const Markup = {
+    button: {
+      callback: (text: string, data: string) => ({
+        text,
+        callback_data: data,
+      }),
+    },
+    inlineKeyboard: (rows: Array<Array<{ text: string; callback_data: string }>>) => ({
+      reply_markup: {
+        inline_keyboard: rows,
+      },
+    }),
+  }
+
+  class Telegraf {
+    public telegram = {
+      sendMessage: vi.fn(async () => ({ message_id: 123 })),
+      editMessageText: vi.fn(async () => undefined),
+      setMyCommands: vi.fn(async () => undefined),
+    }
+
+    private startHandler: ((ctx: any) => any) | null = null
+    private commandHandlers = new Map<string, (ctx: any) => any>()
+    private onHandlers = new Map<string, (ctx: any) => any>()
+
+    constructor(_token: string, _options?: unknown) {
+      state.lastBot = {
+        telegram: this.telegram,
+        dispatchStart: async (ctx: any) => {
+          await this.startHandler?.(ctx)
+        },
+        dispatchCommand: async (command: string, ctx: any) => {
+          const handler = this.commandHandlers.get(command)
+          if (!handler) {
+            throw new Error(`No handler registered for /${command}`)
+          }
+          await handler(ctx)
+        },
+        dispatchOn: async (event: string, ctx: any) => {
+          const handler = this.onHandlers.get(event)
+          if (!handler) {
+            throw new Error(`No handler registered for on('${event}')`)
+          }
+          await handler(ctx)
+        },
+      }
+    }
+
+    start(handler: (ctx: any) => any) {
+      this.startHandler = handler
+      return this
+    }
+
+    command(command: string, handler: (ctx: any) => any) {
+      this.commandHandlers.set(command, handler)
+      return this
+    }
+
+    on(event: string, handler: (ctx: any) => any) {
+      this.onHandlers.set(event, handler)
+      return this
+    }
+
+    catch(_handler: (err: unknown, ctx: any) => any) {
+      return this
+    }
+
+    launch() {
+      return this
+    }
+
+    stop(_reason?: string) {
+      return this
+    }
+  }
+
+  return { Telegraf, Markup }
+})
+
+const createTextCtx = (options: {
+  userId: number
+  chatId?: number
+  text: string
+  messageId?: number
+  entities?: Array<{ type: string; offset: number }>
+}) => {
+  const messageId = options.messageId ?? 100
+  return {
+    from: { id: options.userId, username: "user" },
+    chat: options.chatId == null ? undefined : { id: options.chatId },
+    message: {
+      text: options.text,
+      message_id: messageId,
+      entities: options.entities,
+    },
+    reply: vi.fn(async () => undefined),
+  }
+}
+
+const createCallbackCtx = (options: {
+  userId: number
+  chatId: number
+  data: string
+}) => {
+  return {
+    from: { id: options.userId, username: "user" },
+    chat: { id: options.chatId },
+    callbackQuery: { data: options.data },
+    answerCbQuery: vi.fn(async () => undefined),
+  }
+}
+
+const flushMicrotasks = async () => {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+describe("bot handler behavior", () => {
+  beforeEach(() => {
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    if (state) {
+      state.lastBot = null
+    }
+    vi.useRealTimers()
+    vi.spyOn(console, "error").mockImplementation(() => undefined)
+    vi.spyOn(console, "warn").mockImplementation(() => undefined)
+    vi.spyOn(console, "log").mockImplementation(() => undefined)
+  })
+
+  it("sends prompts to OpenCode and replies via bot.telegram.sendMessage", async () => {
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: (alias: string) =>
+        alias === "home" ? { alias: "home", path: "/home/user" } : null,
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+
+    const chatProjects = {
+      getActiveAlias: () => null,
+      setActiveAlias: vi.fn(),
+      clearActiveAlias: vi.fn(),
+    }
+
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot
+    expect(bot).not.toBeNull()
+
+    const ctx = createTextCtx({ userId: 1, chatId: 10, text: "hello", messageId: 200 })
+    await bot!.dispatchOn("text", ctx)
+    await flushMicrotasks()
+
+    expect(opencode.promptFromChat).toHaveBeenCalledTimes(1)
+    expect(bot!.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "hi",
+      expect.objectContaining({ reply_parameters: { message_id: 200 } }),
+    )
+  })
+
+  it("blocks concurrent prompts per chat", async () => {
+    let resolvePrompt: ((value: any) => void) | null = null
+    const pending = new Promise((resolve) => {
+      resolvePrompt = resolve
+    })
+
+    const opencode = {
+      promptFromChat: vi.fn(() => pending),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 10_000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "first", messageId: 1 }),
+    )
+    await flushMicrotasks()
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "second", messageId: 2 }),
+    )
+    await flushMicrotasks()
+
+    expect(opencode.promptFromChat).toHaveBeenCalledTimes(1)
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "Your previous message has not been replied to yet. This message will be ignored.",
+      expect.objectContaining({ reply_parameters: { message_id: 2 } }),
+    )
+
+    resolvePrompt?.({ reply: "done", model: null })
+    await flushMicrotasks()
+  })
+
+  it("times out a prompt, aborts it, and allows a new prompt", async () => {
+    vi.useFakeTimers()
+
+    let capturedSignal: AbortSignal | undefined
+    let resolvePrompt: ((value: any) => void) | null = null
+    const firstPrompt = new Promise((resolve) => {
+      resolvePrompt = resolve
+    })
+
+    const opencode = {
+      promptFromChat: vi.fn(async (_chatId: number, _text: string, _dir: string, options?: any) => {
+        capturedSignal = options?.signal
+        return firstPrompt as any
+      }),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "first", messageId: 10 }),
+    )
+    await flushMicrotasks()
+
+    vi.advanceTimersByTime(1000)
+    await flushMicrotasks()
+
+    expect(capturedSignal?.aborted).toBe(true)
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "OpenCode request timed out. You can send a new message.",
+      expect.objectContaining({ reply_parameters: { message_id: 10 } }),
+    )
+
+    resolvePrompt?.({ reply: "late", model: null })
+    await flushMicrotasks()
+
+    opencode.promptFromChat.mockResolvedValueOnce({ reply: "second", model: null })
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "second", messageId: 11 }),
+    )
+    await flushMicrotasks()
+
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "second",
+      expect.objectContaining({ reply_parameters: { message_id: 11 } }),
+    )
+  })
+
+  it("permission flow: event -> inline buttons -> callback -> reply + edit", async () => {
+    const permissionHandlers: { onPermissionAsked?: any } = {}
+
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn((handlers: any) => {
+        permissionHandlers.onPermissionAsked = handlers.onPermissionAsked
+        return { stop: () => undefined }
+      }),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await permissionHandlers.onPermissionAsked({
+      request: {
+        id: "perm-1",
+        sessionID: "session-1",
+        permission: "fs.write",
+        patterns: ["src/**"],
+        always: ["/home/user"],
+      },
+      directory: "/home/user",
+    })
+
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      expect.stringContaining("OpenCode permission request"),
+      expect.objectContaining({
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "Approve once", callback_data: "perm:perm-1:once" },
+              {
+                text: "Approve always",
+                callback_data: "perm:perm-1:always",
+              },
+              { text: "Reject", callback_data: "perm:perm-1:reject" },
+            ],
+          ],
+        },
+      }),
+    )
+
+    await bot.dispatchOn(
+      "callback_query",
+      createCallbackCtx({ userId: 1, chatId: 10, data: "perm:perm-1:once" }),
+    )
+
+    expect(opencode.replyToPermission).toHaveBeenCalledWith(
+      "perm-1",
+      "once",
+      "/home/user",
+    )
+    expect(bot.telegram.editMessageText).toHaveBeenCalledWith(
+      10,
+      123,
+      undefined,
+      expect.stringContaining("Decision: Approved (once)"),
+    )
+  })
+
+  it("/start enforces allowlist", async () => {
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    const unauthorized = createTextCtx({ userId: 2, chatId: 10, text: "/start" })
+    await bot.dispatchStart(unauthorized)
+    expect(unauthorized.reply).toHaveBeenCalledWith("Not authorized.")
+
+    const authorized = createTextCtx({ userId: 1, chatId: 10, text: "/start" })
+    await bot.dispatchStart(authorized)
+    expect(authorized.reply).toHaveBeenCalledWith(
+      "Bot is online. Send me a message and I'll log it here.",
+    )
+  })
+
+  it("/project covers list/current/add/remove/set + usage + errors", async () => {
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [
+        { alias: "home", path: "/home/user" },
+        { alias: "demo", path: "/repo/demo" },
+      ],
+      getProject: (alias: string) => {
+        if (alias === "home") return { alias: "home", path: "/home/user" }
+        if (alias === "demo") return { alias: "demo", path: "/repo/demo" }
+        return null
+      },
+      addProject: vi.fn((alias: string, projectPath: string) => ({
+        alias,
+        path: projectPath,
+      })),
+      removeProject: vi.fn(),
+    }
+
+    const chatProjects = {
+      getActiveAlias: vi.fn(() => "demo"),
+      setActiveAlias: vi.fn(),
+      clearActiveAlias: vi.fn(),
+    }
+
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    const unauthorized = createTextCtx({ userId: 2, chatId: 10, text: "/project" })
+    await bot.dispatchCommand("project", unauthorized)
+    expect(unauthorized.reply).toHaveBeenCalledWith("Not authorized.")
+
+    const listCtx = createTextCtx({ userId: 1, chatId: 10, text: "/project list" })
+    await bot.dispatchCommand("project", listCtx)
+    expect(listCtx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Projects (active marked with *):"),
+    )
+
+    const currentCtx = createTextCtx({ userId: 1, chatId: 10, text: "/project current" })
+    await bot.dispatchCommand("project", currentCtx)
+    expect(currentCtx.reply).toHaveBeenCalledWith("demo: /repo/demo")
+
+    const addUsageCtx = createTextCtx({ userId: 1, chatId: 10, text: "/project add" })
+    await bot.dispatchCommand("project", addUsageCtx)
+    expect(addUsageCtx.reply).toHaveBeenCalledWith("Usage: /project add <alias> <path>")
+
+    const addCtx = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "/project add new /repo/new",
+    })
+    await bot.dispatchCommand("project", addCtx)
+    expect(projects.addProject).toHaveBeenCalledWith("new", "/repo/new")
+    expect(addCtx.reply).toHaveBeenCalledWith("Added new: /repo/new")
+
+    const removeUsageCtx = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "/project remove",
+    })
+    await bot.dispatchCommand("project", removeUsageCtx)
+    expect(removeUsageCtx.reply).toHaveBeenCalledWith("Usage: /project remove <alias>")
+
+    const removeCtx = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "/project remove demo",
+    })
+    await bot.dispatchCommand("project", removeCtx)
+    expect(projects.removeProject).toHaveBeenCalledWith("demo")
+    expect(chatProjects.setActiveAlias).toHaveBeenCalledWith(10, "home")
+    expect(removeCtx.reply).toHaveBeenCalledWith("Removed demo")
+
+    const setUsageCtx = createTextCtx({ userId: 1, chatId: 10, text: "/project set" })
+    await bot.dispatchCommand("project", setUsageCtx)
+    expect(setUsageCtx.reply).toHaveBeenCalledWith("Usage: /project set <alias>")
+
+    const setCtx = createTextCtx({ userId: 1, chatId: 10, text: "/project set home" })
+    await bot.dispatchCommand("project", setCtx)
+    expect(chatProjects.setActiveAlias).toHaveBeenCalledWith(10, "home")
+    expect(setCtx.reply).toHaveBeenCalledWith("Active project: home")
+
+    const unknownCtx = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "/project wat",
+    })
+    await bot.dispatchCommand("project", unknownCtx)
+    expect(unknownCtx.reply).toHaveBeenCalledWith(
+      "Usage: /project <list|current|add|remove|set> ...",
+    )
+
+    const missingChatCtx = createTextCtx({ userId: 1, text: "/project list" })
+    await bot.dispatchCommand("project", missingChatCtx)
+    expect(missingChatCtx.reply).toHaveBeenCalledWith("Missing chat context.")
+
+    const failingProjects = {
+      ...projects,
+      removeProject: vi.fn(() => {
+        throw new Error("boom")
+      }),
+    }
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      failingProjects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+    const state2 = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot2 = state2.lastBot!
+    const errorCtx = createTextCtx({ userId: 1, chatId: 10, text: "/project remove demo" })
+    await bot2.dispatchCommand("project", errorCtx)
+    expect(errorCtx.reply).toHaveBeenCalledWith("boom")
+  })
+
+  it("/model covers current/list + error branches", async () => {
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => [
+        { id: "p", models: { m: { name: "M" } } },
+      ]),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: vi.fn(() => null),
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    const unauthorized = createTextCtx({ userId: 2, chatId: 10, text: "/model" })
+    await bot.dispatchCommand("model", unauthorized)
+    expect(unauthorized.reply).toHaveBeenCalledWith("Not authorized.")
+
+    const currentNoModel = createTextCtx({ userId: 1, chatId: 10, text: "/model" })
+    await bot.dispatchCommand("model", currentNoModel)
+    expect(currentNoModel.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Model unavailable"),
+    )
+
+    chatModels.getModel.mockReturnValueOnce({ providerID: "p", modelID: "m" })
+    const currentModel = createTextCtx({ userId: 1, chatId: 10, text: "/model current" })
+    await bot.dispatchCommand("model", currentModel)
+    expect(currentModel.reply).toHaveBeenCalledWith("Current model: p/m")
+
+    const listCtx = createTextCtx({ userId: 1, chatId: 10, text: "/model list", messageId: 55 })
+    await bot.dispatchCommand("model", listCtx)
+    expect(state.lastBot!.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      expect.stringContaining("Available models:"),
+      expect.objectContaining({ reply_parameters: { message_id: 55 } }),
+    )
+
+    const usageCtx = createTextCtx({ userId: 1, chatId: 10, text: "/model wat" })
+    await bot.dispatchCommand("model", usageCtx)
+    expect(usageCtx.reply).toHaveBeenCalledWith("Usage: /model [list]")
+
+    opencode.listModels.mockRejectedValueOnce(new Error("boom"))
+    const errorCtx = createTextCtx({ userId: 1, chatId: 10, text: "/model list" })
+    await bot.dispatchCommand("model", errorCtx)
+    expect(errorCtx.reply).toHaveBeenCalledWith("boom")
+  })
+
+  it("/reset covers didReset and no-session branches", async () => {
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => true),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    const didReset = createTextCtx({ userId: 1, chatId: 10, text: "/reset" })
+    await bot.dispatchCommand("reset", didReset)
+    expect(chatModels.clearModel).toHaveBeenCalledWith(10, "/home/user")
+    expect(didReset.reply).toHaveBeenCalledWith("Session reset for home.")
+
+    opencode.resetSession.mockReturnValueOnce(false)
+    const noSession = createTextCtx({ userId: 1, chatId: 10, text: "/reset" })
+    await bot.dispatchCommand("reset", noSession)
+    expect(noSession.reply).toHaveBeenCalledWith(
+      "No active session to reset for home.",
+    )
+  })
+
+  it("/reboot and /restart cover configured/unconfigured branches", async () => {
+    const childProcess = await import("node:child_process")
+    const exec = childProcess.exec as unknown as ReturnType<typeof vi.fn>
+
+    exec.mockImplementationOnce(
+      (_cmd: string, _opts: any, cb: (err: any, stdout: string, stderr: string) => void) => {
+        cb(null, "ok\n", "")
+      },
+    )
+    exec.mockImplementationOnce(
+      (_cmd: string, _opts: any, cb: (err: any, stdout: string, stderr: string) => void) => {
+        cb(null, "", "")
+      },
+    )
+
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    const rebootUnconfigured = createTextCtx({ userId: 1, chatId: 10, text: "/reboot" })
+    await bot.dispatchCommand("reboot", rebootUnconfigured)
+    expect(rebootUnconfigured.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Restart command not configured"),
+    )
+
+    const restartUnconfigured = createTextCtx({ userId: 1, chatId: 10, text: "/restart" })
+    await bot.dispatchCommand("restart", restartUnconfigured)
+    expect(restartUnconfigured.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Restart command not configured"),
+    )
+
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+        opencodeRestart: { command: "echo reboot", timeoutMs: 1000 },
+        bridgeRestart: { command: "echo restart", timeoutMs: 1000 },
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+    const state2 = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot2 = state2.lastBot!
+
+    const rebootConfigured = createTextCtx({ userId: 1, chatId: 10, text: "/reboot" })
+    await bot2.dispatchCommand("reboot", rebootConfigured)
+    expect(opencode.resetAllSessions).toHaveBeenCalledTimes(1)
+    expect(chatModels.clearAll).toHaveBeenCalledTimes(1)
+    expect(rebootConfigured.reply).toHaveBeenCalledWith(
+      expect.stringContaining("OpenCode restart triggered"),
+    )
+
+    const restartConfigured = createTextCtx({ userId: 1, chatId: 10, text: "/restart" })
+    await bot2.dispatchCommand("restart", restartConfigured)
+    expect(restartConfigured.reply).toHaveBeenCalledWith(
+      "Restarting opencode-telegram-bridge...",
+    )
+  })
+
+  it("text handler rejects unauthorized users", async () => {
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+    const ctx = createTextCtx({ userId: 2, chatId: 10, text: "hello" })
+    await bot.dispatchOn("text", ctx)
+
+    expect(ctx.reply).toHaveBeenCalledWith("Not authorized.")
+    expect(opencode.promptFromChat).not.toHaveBeenCalled()
+  })
+
+  it("text handler ignores command messages", async () => {
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+    const ctx = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "/project list",
+      entities: [{ type: "bot_command", offset: 0 }],
+    })
+    await bot.dispatchOn("text", ctx)
+
+    expect(opencode.promptFromChat).not.toHaveBeenCalled()
+    expect(state.lastBot!.telegram.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it("text handler errors: missing chat / missing project / OpenCode failure", async () => {
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: vi.fn(() => ({ alias: "home", path: "/home/user" })),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    const missingChat = createTextCtx({ userId: 1, text: "hello" })
+    await bot.dispatchOn("text", missingChat)
+    expect(missingChat.reply).toHaveBeenCalledWith("Missing chat context.")
+
+    projects.getProject.mockReturnValueOnce(null)
+    const missingProject = createTextCtx({ userId: 1, chatId: 10, text: "hello" })
+    await bot.dispatchOn("text", missingProject)
+    expect(missingProject.reply).toHaveBeenCalledWith("Missing project configuration.")
+
+    opencode.promptFromChat.mockRejectedValueOnce(new Error("boom"))
+    const openCodeError = createTextCtx({ userId: 1, chatId: 10, text: "hello" })
+    await bot.dispatchOn("text", openCodeError)
+    await flushMicrotasks()
+    expect(state.lastBot!.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "OpenCode error. Check server logs.",
+      expect.anything(),
+    )
+  })
+
+  it("sendReply splits long replies into multiple Telegram messages", async () => {
+    const longReply = "a".repeat(5000)
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: longReply, model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+    const ctx = createTextCtx({ userId: 1, chatId: 10, text: "hello", messageId: 42 })
+    await bot.dispatchOn("text", ctx)
+    await flushMicrotasks()
+
+    const calls = state.lastBot!.telegram.sendMessage.mock.calls
+    expect(calls.length).toBe(2)
+    expect(calls[0][0]).toBe(10)
+    expect(calls[0][1].length).toBeLessThanOrEqual(4096)
+    expect(calls[0][2]).toEqual({ reply_parameters: { message_id: 42 } })
+    expect(calls[1][0]).toBe(10)
+    expect(calls[1][1].length).toBeLessThanOrEqual(4096)
+    expect(calls[1][2]).toBeUndefined()
+  })
+
+  it("sendReply chunking preserves content and only replies-to on first chunk", async () => {
+    const reply = "0123456789".repeat(500) // 5000 chars -> 2 chunks
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply, model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    const ctx = createTextCtx({ userId: 1, chatId: 10, text: "hello", messageId: 77 })
+    await bot.dispatchOn("text", ctx)
+    await flushMicrotasks()
+
+    const calls = state.lastBot!.telegram.sendMessage.mock.calls
+    const sentText = calls.map((call) => call[1]).join("")
+    expect(sentText).toBe(reply)
+    expect(calls[0][2]).toEqual({ reply_parameters: { message_id: 77 } })
+    expect(calls[1][2]).toBeUndefined()
+  })
+
+  it("sendReply skips reply_parameters when replyToMessageId is falsy", async () => {
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await bot.dispatchOn("text", createTextCtx({ userId: 1, chatId: 10, text: "hello", messageId: 0 }))
+    await flushMicrotasks()
+
+    expect(state.lastBot!.telegram.sendMessage).toHaveBeenCalledWith(10, "hi", undefined)
+  })
+
+  it("sendReply handles sendMessage failures without crashing the handler", async () => {
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "a".repeat(5000), model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    state.lastBot!.telegram.sendMessage
+      .mockImplementationOnce(async () => ({ message_id: 1 }))
+      .mockImplementationOnce(async () => {
+        throw new Error("send failed")
+      })
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "hello", messageId: 9 }),
+    )
+    await flushMicrotasks()
+
+    expect(state.lastBot!.telegram.sendMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it("permission event is ignored for unknown session owner", async () => {
+    const permissionHandlers: { onPermissionAsked?: any } = {}
+
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn((handlers: any) => {
+        permissionHandlers.onPermissionAsked = handlers.onPermissionAsked
+        return { stop: () => undefined }
+      }),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await permissionHandlers.onPermissionAsked({
+      request: {
+        id: "perm-unknown",
+        sessionID: "session-unknown",
+        permission: "fs.write",
+        patterns: [],
+        always: [],
+      },
+      directory: "/home/user",
+    })
+
+    expect(bot.telegram.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it("callback_query errors: unauthorized / request missing / reply failure", async () => {
+    const permissionHandlers: { onPermissionAsked?: any } = {}
+
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => {
+        throw new Error("boom")
+      }),
+      startPermissionEventStream: vi.fn((handlers: any) => {
+        permissionHandlers.onPermissionAsked = handlers.onPermissionAsked
+        return { stop: () => undefined }
+      }),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await permissionHandlers.onPermissionAsked({
+      request: {
+        id: "perm-1",
+        sessionID: "session-1",
+        permission: "fs.write",
+        patterns: [],
+        always: [],
+      },
+      directory: "/home/user",
+    })
+
+    const unauthorized = createCallbackCtx({
+      userId: 2,
+      chatId: 10,
+      data: "perm:perm-1:once",
+    })
+    await bot.dispatchOn("callback_query", unauthorized)
+    expect(unauthorized.answerCbQuery).toHaveBeenCalledWith("Not authorized.")
+
+    const missingRequest = createCallbackCtx({
+      userId: 1,
+      chatId: 10,
+      data: "perm:missing:once",
+    })
+    await bot.dispatchOn("callback_query", missingRequest)
+    expect(missingRequest.answerCbQuery).toHaveBeenCalledWith(
+      "Permission request not found.",
+    )
+
+    const failingReply = createCallbackCtx({
+      userId: 1,
+      chatId: 10,
+      data: "perm:perm-1:once",
+    })
+    await bot.dispatchOn("callback_query", failingReply)
+    expect(failingReply.answerCbQuery).toHaveBeenCalledWith("Failed to send response.")
+  })
+
+  it("reboot/restart error paths reply with failure messages", async () => {
+    const childProcess = await import("node:child_process")
+    const exec = childProcess.exec as unknown as ReturnType<typeof vi.fn>
+    exec.mockImplementationOnce(
+      (_cmd: string, _opts: any, cb: (err: any, stdout: string, stderr: string) => void) => {
+        const err: any = new Error("fail")
+        err.stderr = "bad"
+        cb(err, "", "bad")
+      },
+    )
+    exec.mockImplementationOnce(
+      (_cmd: string, _opts: any, cb: (err: any, stdout: string, stderr: string) => void) => {
+        const err: any = new Error("fail")
+        err.stderr = "bad"
+        cb(err, "", "bad")
+      },
+    )
+
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+        opencodeRestart: { command: "echo reboot", timeoutMs: 1000 },
+        bridgeRestart: { command: "echo restart", timeoutMs: 1000 },
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+    const reboot = createTextCtx({ userId: 1, chatId: 10, text: "/reboot" })
+    await bot.dispatchCommand("reboot", reboot)
+    expect(reboot.reply).toHaveBeenCalledWith(expect.stringContaining("OpenCode restart failed."))
+
+    const restart = createTextCtx({ userId: 1, chatId: 10, text: "/restart" })
+    await bot.dispatchCommand("restart", restart)
+    expect(restart.reply).toHaveBeenCalledWith(expect.stringContaining("Bridge restart failed."))
+  })
+})

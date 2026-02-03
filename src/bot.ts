@@ -9,11 +9,22 @@ import { createPromptGuard } from "./prompt-guard.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
 import type { ChatModelStore, ChatProjectStore } from "./state.js"
 import { splitTelegramMessage } from "./telegram.js"
-
-type TelegramUser = {
-  id?: number
-  username?: string
-}
+import {
+  buildPermissionKeyboardSpec,
+  buildPermissionSummary,
+  formatCommandOutput,
+  formatModelList,
+  formatPermissionDecision,
+  formatProjectList,
+  formatUserLabel,
+  isAuthorized,
+  isCommandMessage,
+  parseModelCommand,
+  parsePermissionCallback,
+  parseProjectCommand,
+  type ModelProvider,
+  type PermissionKeyboardSpec,
+} from "./bot-logic.js"
 
 type PendingPermission = {
   chatId: number
@@ -33,19 +44,11 @@ type RestartResult =
 
 const execAsync = promisify(exec)
 
-const isAuthorized = (user: TelegramUser | undefined, allowedUserId: number) =>
-  user?.id === allowedUserId
-
-const formatUserLabel = (user: TelegramUser | undefined) => {
-  if (!user) {
-    return "unknown"
-  }
-
-  if (user.username) {
-    return `${user.username} (${user.id ?? "unknown"})`
-  }
-
-  return String(user.id ?? "unknown")
+export const toTelegrafInlineKeyboard = (spec: PermissionKeyboardSpec) => {
+  const buttons = spec.buttons.map((button) =>
+    Markup.button.callback(button.text, button.data),
+  )
+  return Markup.inlineKeyboard([buttons])
 }
 
 export const startBot = (
@@ -86,41 +89,6 @@ export const startBot = (
     }
   }
 
-  const buildPermissionSummary = (request: {
-    permission: string
-    patterns: Array<string>
-    always: Array<string>
-  }) => {
-    const lines = ["OpenCode permission request", `Permission: ${request.permission}`]
-    if (request.patterns.length > 0) {
-      lines.push(`Patterns: ${request.patterns.join(", ")}`)
-    }
-    if (request.always.length > 0) {
-      lines.push(`Always scopes: ${request.always.join(", ")}`)
-    }
-
-    return lines.join("\n")
-  }
-
-  const buildPermissionKeyboard = (
-    requestId: string,
-    includeAlways: boolean,
-  ) => {
-    const buttons = [
-      Markup.button.callback("Approve once", `perm:${requestId}:once`),
-      Markup.button.callback("Reject", `perm:${requestId}:reject`),
-    ]
-    if (includeAlways) {
-      buttons.splice(
-        1,
-        0,
-        Markup.button.callback("Approve always", `perm:${requestId}:always`),
-      )
-    }
-
-    return Markup.inlineKeyboard([buttons])
-  }
-
   const buildBotCommands = () => {
     const commands = [
       { command: "start", description: "Confirm the bot is online" },
@@ -147,24 +115,6 @@ export const startBot = (
     }
 
     return commands
-  }
-
-  const formatCommandOutput = (value: string | undefined) => {
-    if (!value) {
-      return null
-    }
-
-    const trimmed = value.trim()
-    if (!trimmed) {
-      return null
-    }
-
-    const maxLength = 800
-    if (trimmed.length <= maxLength) {
-      return trimmed
-    }
-
-    return `${trimmed.slice(0, maxLength)}...`
   }
 
   const runRestartCommand = async (
@@ -219,9 +169,8 @@ export const startBot = (
 
       const summary = buildPermissionSummary(request)
       try {
-        const replyMarkup = buildPermissionKeyboard(
-          request.id,
-          request.always.length > 0,
+        const replyMarkup = toTelegrafInlineKeyboard(
+          buildPermissionKeyboardSpec(request.id, request.always.length > 0),
         )
         const message = await bot.telegram.sendMessage(owner.chatId, summary, {
           reply_markup: replyMarkup.reply_markup,
@@ -248,25 +197,6 @@ export const startBot = (
     chatProjects.setActiveAlias(chatId, alias)
   }
 
-  const formatProjectList = (activeAlias: string) => {
-    const entries = projects.listProjects()
-    if (entries.length === 0) {
-      return "No projects configured."
-    }
-
-    const lines = entries.map((entry) => {
-      const prefix = entry.alias === activeAlias ? "*" : " "
-      return `${prefix} ${entry.alias}: ${entry.path}`
-    })
-
-    return ["Projects (active marked with *):", ...lines].join("\n")
-  }
-
-  const isCommandMessage = (ctx: { message?: { entities?: Array<{ type: string; offset: number }> } }) =>
-    ctx.message?.entities?.some(
-      (entity) => entity.type === "bot_command" && entity.offset === 0,
-    ) ?? false
-
   bot.start(async (ctx) => {
     if (!isAuthorized(ctx.from, config.allowedUserId)) {
       await ctx.reply("Not authorized.")
@@ -290,16 +220,14 @@ export const startBot = (
     }
 
     const messageText = ctx.message?.text ?? ""
-    const parts = messageText.trim().split(/\s+/)
-    parts.shift()
-
-    const subcommand = parts[0] ?? "list"
-    const args = parts.slice(1)
+    const { subcommand, args } = parseProjectCommand(messageText)
 
     try {
       switch (subcommand) {
         case "list": {
-          await ctx.reply(formatProjectList(getChatProjectAlias(chatId)))
+          await ctx.reply(
+            formatProjectList(projects.listProjects(), getChatProjectAlias(chatId)),
+          )
           return
         }
         case "current": {
@@ -392,36 +320,17 @@ export const startBot = (
     }
 
     const messageText = ctx.message?.text ?? ""
-    const parts = messageText.trim().split(/\s+/)
-    parts.shift()
-
-    const subcommand = parts[0] ?? "current"
+    const { subcommand } = parseModelCommand(messageText)
 
     try {
       switch (subcommand) {
         case "list": {
           const providers = await opencode.listModels(project.path)
-          const lines = ["Available models:"]
-          const providerEntries = [...providers].sort((a, b) =>
-            a.id.localeCompare(b.id),
+          await sendReply(
+            chatId,
+            ctx.message?.message_id,
+            formatModelList(providers as unknown as ModelProvider[]),
           )
-          for (const provider of providerEntries) {
-            const modelEntries = Object.entries(provider.models).sort((a, b) =>
-              a[0].localeCompare(b[0]),
-            )
-            for (const [modelId, model] of modelEntries) {
-              const label = model?.name
-                ? `${provider.id}/${modelId} (${model.name})`
-                : `${provider.id}/${modelId}`
-              lines.push(label)
-            }
-          }
-
-          if (lines.length === 1) {
-            lines.push("No models available.")
-          }
-
-          await sendReply(chatId, ctx.message?.message_id, lines.join("\n"))
           return
         }
         case "current": {
@@ -566,7 +475,8 @@ export const startBot = (
     }
 
     const data = callbackQuery.data
-    if (!data.startsWith("perm:")) {
+    const parsed = parsePermissionCallback(data)
+    if (!parsed) {
       return
     }
 
@@ -575,17 +485,8 @@ export const startBot = (
       return
     }
 
-    const [, requestId, reply] = data.split(":")
-    if (!requestId || !reply) {
-      await ctx.answerCbQuery("Invalid permission response.")
-      return
-    }
-
-    const permissionReply = reply as PermissionReply
-    if (!(["once", "always", "reject"] as PermissionReply[]).includes(permissionReply)) {
-      await ctx.answerCbQuery("Invalid permission response.")
-      return
-    }
+    const requestId = parsed.requestId
+    const permissionReply = parsed.reply as PermissionReply
 
     const pending = pendingPermissions.get(requestId)
     if (!pending) {
@@ -600,12 +501,7 @@ export const startBot = (
         pending.directory,
       )
       pendingPermissions.delete(requestId)
-      const decisionLabel =
-        permissionReply === "reject"
-          ? "Rejected"
-          : permissionReply === "always"
-          ? "Approved (always)"
-          : "Approved (once)"
+      const decisionLabel = formatPermissionDecision(permissionReply)
       await bot.telegram.editMessageText(
         pending.chatId,
         pending.messageId,
@@ -625,7 +521,7 @@ export const startBot = (
       return
     }
 
-    if (isCommandMessage(ctx)) {
+    if (ctx.message && isCommandMessage(ctx.message)) {
       return
     }
 
