@@ -1,5 +1,12 @@
 # opencode-telegram-bridge
 
+## 1.2.2
+
+### Patch Changes
+
+- 13fcfbe: Improve docs setup guidance, branding assets, OSS metadata, and coverage thresholds.
+- d4c4367: Improve test coverage and harden bot behavior validation.
+
 ## 1.2.1
 
 ### Patch Changes
