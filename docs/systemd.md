@@ -1,6 +1,7 @@
 # systemd Service (Linux user)
 
 This project ships a user systemd unit template in `systemd/opencode-telegram-bridge.service`.
+On macOS, use the [launchd](launchd.md) guide instead.
 
 ## Recommended: setup wizard
 ```bash

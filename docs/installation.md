@@ -10,12 +10,16 @@
 npm install -g opencode-telegram-bridge
 ```
 
-## Setup (Linux systemd)
+## Setup (Linux systemd / macOS launchd)
 ```bash
 opencode-telegram-bridge setup
 ```
 
-The wizard can also set up OpenCode as a user service. Setup currently supports Linux systemd only. On other platforms, run the bot manually.
+The wizard can also set up OpenCode as a user service. It supports Linux systemd and macOS launchd.
+
+See:
+- [systemd](systemd.md)
+- [launchd](launchd.md)
 
 ## Run the bot
 ```bash

@@ -8,24 +8,25 @@ Run a Telegram bot that forwards messages to an OpenCode server and returns resp
 
 ## Installation (users)
 
-This project is currently Linux-only (it is designed to run as a long-running `systemd` service).
+This project supports Linux (systemd) and macOS (launchd) for long-running services.
 
 Prereqs: Node.js 18+, OpenCode CLI on PATH, and an OpenCode server running (`opencode serve`).
 
-Recommended: use the installation wizard to set this up as a `systemd` daemon.
+Recommended: use the installation wizard to set this up as a service.
 
 ```bash
 npm install -g opencode-telegram-bridge
 opencode-telegram-bridge setup
 ```
 
-The wizard is the easiest and recommended path; it writes the systemd unit and
-env file for you and starts the service.
+The wizard is the easiest and recommended path; it writes the systemd/launchd
+service definition and env file for you and starts the service.
 
-For required environment variables and systemd setup, see:
+For required environment variables and service setup, see:
 - [docs/installation.md](docs/installation.md)
 - [docs/configuration.md](docs/configuration.md)
 - [docs/systemd.md](docs/systemd.md)
+- [docs/launchd.md](docs/launchd.md)
 
 Contributing:
 - [CONTRIBUTING.md](CONTRIBUTING.md)

@@ -18,6 +18,7 @@ nav:
   - Configuration: configuration.md
   - Usage: usage.md
   - Systemd: systemd.md
+  - Launchd: launchd.md
 
 markdown_extensions:
   - admonition

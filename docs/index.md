@@ -9,3 +9,4 @@ Start here:
 - Configuration
 - Usage
 - Systemd
+- Launchd

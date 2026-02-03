@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.opencode.telegram-bridge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/path/to/node</string>
+    <string>/path/to/opencode-telegram-bridge/dist/cli.js</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>TELEGRAM_BOT_TOKEN</key>
+    <string>REPLACE_ME</string>
+    <key>TELEGRAM_ALLOWED_USER_ID</key>
+    <string>REPLACE_ME</string>
+    <key>OPENCODE_SERVER_URL</key>
+    <string>http://127.0.0.1:4096</string>
+    <key>OPENCODE_SERVER_USERNAME</key>
+    <string>opencode</string>
+    <key>OPENCODE_SERVER_PASSWORD</key>
+    <string></string>
+    <key>OPENCODE_PROMPT_TIMEOUT_MS</key>
+    <string>600000</string>
+    <key>TELEGRAM_HANDLER_TIMEOUT_MS</key>
+    <string>630000</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>~/Library/Logs/opencode-telegram-bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>~/Library/Logs/opencode-telegram-bridge.log</string>
+</dict>
+</plist>

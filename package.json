@@ -11,6 +11,7 @@
     "dist/",
     "docs/",
     "systemd/",
+    "launchd/",
     ".env.example",
     "README.md"
   ],
