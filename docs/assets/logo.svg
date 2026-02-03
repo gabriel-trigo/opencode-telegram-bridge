@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <g fill="none" stroke="#0B1320" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- Bridge deck -->
+    <rect x="120" y="660" width="784" height="140" rx="70"
+          fill="#FFC857" stroke-width="48"/>
+
+    <!-- Angle bracket supports -->
+    <path d="M 370 800 L 270 850 L 370 900" stroke-width="60"/>
+    <path d="M 654 800 L 754 850 L 654 900" stroke-width="60"/>
+
+    <!-- Robot head -->
+    <rect x="170" y="236" width="240" height="210" rx="96"
+          fill="#23B5A6" stroke-width="48"/>
+    <!-- Robot body -->
+    <rect x="150" y="412" width="280" height="220" rx="110"
+          fill="#23B5A6" stroke-width="48"/>
+
+    <!-- Antenna -->
+    <path d="M 290 198 L 290 236" stroke-width="48"/>
+    <circle cx="290" cy="178" r="36" fill="#23B5A6" stroke-width="48"/>
+
+    <!-- Eyes -->
+    <circle cx="250" cy="336" r="18" fill="#0B1320" stroke="none"/>
+    <circle cx="330" cy="336" r="18" fill="#0B1320" stroke="none"/>
+
+    <!-- Paper plane (clean outline + fold line) -->
+    <g stroke="#0B1320" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 540 420 L 740 350 L 610 570 L 590 470 Z" fill="#23B5A6" stroke-width="18"/>
+      <path d="M 590 470 L 740 350" fill="none" stroke-width="12"/>
+    </g>
+
+  </g>
+</svg>

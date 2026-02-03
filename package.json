@@ -30,10 +30,26 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "description": "Telegram bot bridge for the OpenCode server",
+  "keywords": [
+    "opencode",
+    "telegram",
+    "bot",
+    "bridge",
+    "telegraf",
+    "systemd",
+    "cli"
+  ],
+  "author": "Gabriel Trigo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gabriel-trigo/opencode-telegram-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gabriel-trigo/opencode-telegram-bridge/issues"
+  },
+  "homepage": "https://gabriel-trigo.github.io/opencode-telegram-bridge/",
   "devDependencies": {
     "@changesets/cli": "^2.29.8",
     "@types/better-sqlite3": "^7.6.13",
