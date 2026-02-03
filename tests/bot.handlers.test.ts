@@ -154,7 +154,9 @@ describe("bot handler behavior", () => {
 
   it("sends prompts to OpenCode and replies via bot.telegram.sendMessage", async () => {
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => null),
@@ -222,7 +224,9 @@ describe("bot handler behavior", () => {
     })
 
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(() => pending),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => null),
@@ -285,6 +289,100 @@ describe("bot handler behavior", () => {
     await flushMicrotasks()
   })
 
+  it("/abort aborts the in-flight prompt and allows another prompt", async () => {
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      abortSession: vi.fn(async () => true),
+      promptFromChat: vi.fn(
+        async (_chatId: number, text: string, _dir: string, options?: any) => {
+          if (text === "second") {
+            return { reply: "ok", model: null }
+          }
+
+          const signal = options?.signal as AbortSignal | undefined
+          return new Promise((_resolve, reject) => {
+            signal?.addEventListener(
+              "abort",
+              () => {
+                const error = new Error("aborted") as Error & { name: string }
+                error.name = "AbortError"
+                reject(error)
+              },
+              { once: true },
+            )
+          }) as any
+        },
+      ),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 10_000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "first", messageId: 50 }),
+    )
+    await flushMicrotasks()
+
+    const abortCtx = createTextCtx({ userId: 1, chatId: 10, text: "/abort" })
+    await bot.dispatchCommand("abort", abortCtx)
+    await flushMicrotasks()
+
+    expect(state.lastBot!.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "Aborting response to this prompt...",
+      expect.objectContaining({ reply_parameters: { message_id: 50 } }),
+    )
+    expect(opencode.abortSession).toHaveBeenCalledWith("session-1", "/home/user")
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "second", messageId: 51 }),
+    )
+    await flushMicrotasks()
+
+    expect(state.lastBot!.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "ok",
+      expect.objectContaining({ reply_parameters: { message_id: 51 } }),
+    )
+  })
+
   it("times out a prompt, aborts it, and allows a new prompt", async () => {
     vi.useFakeTimers()
 
@@ -295,10 +393,12 @@ describe("bot handler behavior", () => {
     })
 
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async (_chatId: number, _text: string, _dir: string, options?: any) => {
         capturedSignal = options?.signal
         return firstPrompt as any
       }),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => null),
@@ -376,7 +476,9 @@ describe("bot handler behavior", () => {
     const permissionHandlers: { onPermissionAsked?: any } = {}
 
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
@@ -470,7 +572,9 @@ describe("bot handler behavior", () => {
 
   it("/start enforces allowlist", async () => {
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => null),
@@ -908,7 +1012,9 @@ describe("bot handler behavior", () => {
 
   it("text handler rejects unauthorized users", async () => {
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => null),
@@ -956,7 +1062,9 @@ describe("bot handler behavior", () => {
 
   it("text handler ignores command messages", async () => {
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => null),
@@ -1009,7 +1117,9 @@ describe("bot handler behavior", () => {
 
   it("text handler errors: missing chat / missing project / OpenCode failure", async () => {
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => null),
@@ -1071,7 +1181,9 @@ describe("bot handler behavior", () => {
   it("sendReply splits long replies into multiple Telegram messages", async () => {
     const longReply = "a".repeat(5000)
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async () => ({ reply: longReply, model: null })),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => null),
@@ -1127,7 +1239,9 @@ describe("bot handler behavior", () => {
   it("sendReply chunking preserves content and only replies-to on first chunk", async () => {
     const reply = "0123456789".repeat(500) // 5000 chars -> 2 chunks
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async () => ({ reply, model: null })),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => null),
@@ -1180,7 +1294,9 @@ describe("bot handler behavior", () => {
 
   it("sendReply skips reply_parameters when replyToMessageId is falsy", async () => {
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => null),
@@ -1227,7 +1343,9 @@ describe("bot handler behavior", () => {
 
   it("sendReply handles sendMessage failures without crashing the handler", async () => {
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async () => ({ reply: "a".repeat(5000), model: null })),
+      abortSession: vi.fn(async () => true),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
       getSessionOwner: vi.fn(() => null),

@@ -98,6 +98,7 @@ export const startBot = (
       },
       { command: "model", description: "Show or list available models" },
       { command: "reset", description: "Reset the active project session" },
+      { command: "abort", description: "Abort the in-flight prompt" },
     ]
 
     if (config.opencodeRestart) {
@@ -390,6 +391,48 @@ export const startBot = (
     await ctx.reply(`No active session to reset for ${project.alias}.`)
   })
 
+  bot.command("abort", async (ctx) => {
+    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+      await ctx.reply("Not authorized.")
+      return
+    }
+
+    const chatId = ctx.chat?.id
+    if (!chatId) {
+      console.warn("Missing chat id for incoming abort command")
+      await ctx.reply("Missing chat context.")
+      return
+    }
+
+    const activeAlias = getChatProjectAlias(chatId)
+    const project = projects.getProject(activeAlias)
+    if (!project) {
+      console.error("Missing project for chat", { chatId, activeAlias })
+      await ctx.reply("Missing project configuration.")
+      return
+    }
+
+    const aborted = promptGuard.abort(chatId)
+    if (!aborted) {
+      await ctx.reply("No in-flight prompt to abort.")
+      return
+    }
+
+    await sendReply(
+      chatId,
+      aborted.replyToMessageId,
+      "Aborting response to this prompt...",
+    )
+
+    if (aborted.sessionId) {
+      try {
+        await opencode.abortSession(aborted.sessionId, project.path)
+      } catch (error) {
+        console.error("Failed to abort OpenCode session", error)
+      }
+    }
+  })
+
   bot.command("reboot", async (ctx) => {
     if (!isAuthorized(ctx.from, config.allowedUserId)) {
       await ctx.reply("Not authorized.")
@@ -557,7 +600,7 @@ export const startBot = (
      * late replies by checking this flag before responding.
      */
     let timedOut = false
-    const abortController = promptGuard.tryStart(chatId, () => {
+    const abortController = promptGuard.tryStart(chatId, replyToMessageId, () => {
       timedOut = true
       void sendReply(
         chatId,
@@ -577,10 +620,12 @@ export const startBot = (
 
     void (async () => {
       try {
+        const sessionId = await opencode.ensureSessionId(chatId, project.path)
+        promptGuard.setSessionId(chatId, abortController, sessionId)
         const storedModel = chatModels.getModel(chatId, project.path)
         const promptOptions = storedModel
-          ? { signal: abortController.signal, model: storedModel }
-          : { signal: abortController.signal }
+          ? { signal: abortController.signal, model: storedModel, sessionId }
+          : { signal: abortController.signal, sessionId }
         const result = await opencode.promptFromChat(
           chatId,
           text,
@@ -594,13 +639,13 @@ export const startBot = (
           await sendReply(chatId, replyToMessageId, result.reply)
         }
       } catch (error) {
+        if (abortController.signal.aborted) {
+          return
+        }
+
         console.error("Failed to send prompt to OpenCode", error)
         if (!timedOut) {
-          await sendReply(
-            chatId,
-            replyToMessageId,
-            "OpenCode error. Check server logs.",
-          )
+          await sendReply(chatId, replyToMessageId, "OpenCode error. Check server logs.")
         }
       } finally {
         promptGuard.finish(chatId)

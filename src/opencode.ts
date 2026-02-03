@@ -4,12 +4,14 @@ import type { GlobalEvent, Part, PermissionRequest, Provider } from "@opencode-a
 import type { OpencodeConfig } from "./config.js"
 
 export type OpencodeBridge = {
+  ensureSessionId: (chatId: number, projectDir: string) => Promise<string>
   promptFromChat: (
     chatId: number,
     text: string,
     projectDir: string,
     options?: PromptOptions,
   ) => Promise<PromptResult>
+  abortSession: (sessionId: string, projectDir: string) => Promise<boolean>
   resetSession: (chatId: number, projectDir: string) => boolean
   resetAllSessions: () => void
   getSessionOwner: (sessionId: string) => SessionOwner | null
@@ -39,6 +41,7 @@ export type OpencodeBridgeOptions = {
 export type PromptOptions = {
   signal?: AbortSignal
   model?: ModelRef
+  sessionId?: string
 }
 
 export type PermissionReply = "once" | "always" | "reject"
@@ -164,8 +167,11 @@ export const createOpencodeBridge = (
   }
 
   return {
+    async ensureSessionId(chatId, projectDir) {
+      return ensureSession(chatId, projectDir)
+    },
     async promptFromChat(chatId, text, projectDir, options = {}) {
-      const sessionId = await ensureSession(chatId, projectDir)
+      const sessionId = options.sessionId ?? (await ensureSession(chatId, projectDir))
 
       /*
        * The AbortSignal only cancels the HTTP request. The server may continue
@@ -203,6 +209,13 @@ export const createOpencodeBridge = (
         : null
 
       return { reply, model }
+    },
+    async abortSession(sessionId, projectDir) {
+      const result = await client.session.abort({
+        sessionID: sessionId,
+        directory: projectDir,
+      })
+      return requireData(result, "session.abort")
     },
     resetSession(chatId, projectDir) {
       return sessions.clearSession(chatId, projectDir)
