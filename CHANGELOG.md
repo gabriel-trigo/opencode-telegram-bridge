@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.2.3
+
+### Patch Changes
+
+- 0012c1d: Add macOS launchd support to the setup wizard and docs.
+
 ## 1.2.2
 
 ### Patch Changes
