@@ -1,5 +1,8 @@
 # OpenCode Telegram Bridge
 
+[![CI](https://github.com/gabriel-trigo/opencode-telegram-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/gabriel-trigo/opencode-telegram-bridge/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/opencode-telegram-bridge.svg)](https://www.npmjs.com/package/opencode-telegram-bridge)
+
 Run a Telegram bot that forwards messages to an OpenCode server and returns responses.
 
 ## Installation (users)
