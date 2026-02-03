@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.2.4
+
+### Patch Changes
+
+- 42ac371: Add /abort command to cancel an in-flight prompt and stop backend processing.
+
 ## 1.2.3
 
 ### Patch Changes
