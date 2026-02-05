@@ -132,6 +132,30 @@ const modelSupportsImageInput = (providers: Provider[], model: ModelRef): boolea
   return Boolean(info.capabilities?.input?.image)
 }
 
+const modelSupportsPdfInput = (providers: Provider[], model: ModelRef): boolean => {
+  const provider = providers.find((entry) => entry.id === model.providerID)
+  if (!provider) {
+    return false
+  }
+
+  const info = provider.models[model.modelID]
+  if (!info) {
+    return false
+  }
+
+  const modalities = (info as { modalities?: unknown }).modalities
+  if (!modalities || typeof modalities !== "object") {
+    throw new Error("Model does not expose modalities, can't check for PDF support")
+  }
+
+  const input = (modalities as { input?: unknown }).input
+  if (!Array.isArray(input)) {
+    throw new Error("Model does not expose modalities, can't check for PDF support")
+  }
+
+  return input.includes("pdf")
+}
+
 const resolveDefaultModel = (config: Config): ModelRef => {
   const model = config.model
   if (!model) {
@@ -232,6 +256,9 @@ export const createOpencodeBridge = (
       const files = input.files ?? []
 
       if (files.length > 0) {
+        const needsImageSupport = files.some((file) => file.mime.startsWith("image/"))
+        const needsPdfSupport = files.some((file) => file.mime === "application/pdf")
+
         const model = options.model
           ? options.model
           : resolveDefaultModel(
@@ -243,9 +270,16 @@ export const createOpencodeBridge = (
         const providerResult = await client.config.providers({ directory: projectDir })
         const providerData = requireData(providerResult, "config.providers")
         const providers = providerData.providers
-        if (!modelSupportsImageInput(providers, model)) {
+
+        if (needsImageSupport && !modelSupportsImageInput(providers, model)) {
           throw new Error(
             `Model ${model.providerID}/${model.modelID} does not support image input.`,
+          )
+        }
+
+        if (needsPdfSupport && !modelSupportsPdfInput(providers, model)) {
+          throw new Error(
+            `Model ${model.providerID}/${model.modelID} does not support PDF input.`,
           )
         }
       }
