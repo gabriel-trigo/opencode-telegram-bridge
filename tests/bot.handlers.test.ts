@@ -294,8 +294,8 @@ describe("bot handler behavior", () => {
       ensureSessionId: vi.fn(async () => "session-1"),
       abortSession: vi.fn(async () => true),
       promptFromChat: vi.fn(
-        async (_chatId: number, text: string, _dir: string, options?: any) => {
-          if (text === "second") {
+        async (_chatId: number, input: any, _dir: string, options?: any) => {
+          if (input?.text === "second") {
             return { reply: "ok", model: null }
           }
 

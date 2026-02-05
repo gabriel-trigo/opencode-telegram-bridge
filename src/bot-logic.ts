@@ -44,8 +44,12 @@ export const formatUserLabel = (user: TelegramUser | undefined) => {
   return String(user.id ?? "unknown")
 }
 
-export const isCommandMessage = (message: { entities?: unknown }): boolean => {
-  const entities = message.entities
+export const isCommandMessage = (message: unknown): boolean => {
+  if (typeof message !== "object" || message === null) {
+    return false
+  }
+
+  const entities = (message as { entities?: unknown }).entities
   if (!Array.isArray(entities)) {
     return false
   }
