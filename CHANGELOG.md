@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.3.0
+
+### Minor Changes
+
+- 7ed6c9c: Add support for sending a single Telegram image (photo or image document) as a prompt to OpenCode.
+
 ## 1.2.4
 
 ### Patch Changes
