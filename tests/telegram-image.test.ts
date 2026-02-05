@@ -5,7 +5,9 @@ import {
   TelegramImageTooLargeError,
   buildDataUrl,
   downloadTelegramImageAsAttachment,
+  downloadTelegramFileAsAttachment,
   isImageDocument,
+  isPdfDocument,
   pickLargestPhoto,
 } from "../src/telegram-image.js"
 
@@ -33,6 +35,20 @@ describe("telegram-image", () => {
     expect(isImageDocument({ file_id: "x", file_name: "test.pdf" })).toBe(false)
   })
 
+  it("recognizes pdf documents by mime type", () => {
+    expect(
+      isPdfDocument({ file_id: "x", mime_type: "application/pdf", file_name: "a" }),
+    ).toBe(true)
+    expect(
+      isPdfDocument({ file_id: "x", mime_type: "image/png", file_name: "a" }),
+    ).toBe(false)
+  })
+
+  it("recognizes pdf documents by extension when mime is missing", () => {
+    expect(isPdfDocument({ file_id: "x", file_name: "test.PDF" })).toBe(true)
+    expect(isPdfDocument({ file_id: "x", file_name: "test.png" })).toBe(false)
+  })
+
   it("builds a data url", () => {
     const url = buildDataUrl("image/png", Buffer.from([1, 2, 3]))
     expect(url.startsWith("data:image/png;base64,")).toBe(true)
@@ -51,5 +67,35 @@ describe("telegram-image", () => {
       }),
     ).rejects.toBeInstanceOf(TelegramImageTooLargeError)
     expect(telegram.getFileLink).not.toHaveBeenCalled()
+  })
+
+  it("downloads a generic file attachment", async () => {
+    const telegram = {
+      getFileLink: vi.fn(async () => new URL("https://example.com/file")),
+    }
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => Buffer.from([1, 2, 3]),
+      status: 200,
+    }))
+    const originalFetch = globalThis.fetch
+    // @ts-expect-error - test override
+    globalThis.fetch = fetchMock
+
+    try {
+      const attachment = await downloadTelegramFileAsAttachment(telegram, "file", {
+        mime: "application/pdf",
+        filename: "test.pdf",
+        maxBytes: DEFAULT_MAX_IMAGE_BYTES,
+      })
+
+      expect(attachment.mime).toBe("application/pdf")
+      expect(attachment.filename).toBe("test.pdf")
+      expect(attachment.dataUrl.startsWith("data:application/pdf;base64,")).toBe(true)
+      expect(attachment.byteLength).toBe(3)
+    } finally {
+      // @ts-expect-error - restore
+      globalThis.fetch = originalFetch
+    }
   })
 })

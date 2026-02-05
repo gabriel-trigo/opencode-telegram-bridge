@@ -16,7 +16,7 @@ export type DownloadLinkProvider = {
   getFileLink: (fileId: string) => Promise<URL>
 }
 
-export type ImageAttachment = {
+export type FileAttachment = {
   mime: string
   filename?: string
   dataUrl: string
@@ -38,6 +38,8 @@ export class TelegramImageTooLargeError extends Error {
 
 export const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
+export const DEFAULT_MAX_FILE_BYTES = DEFAULT_MAX_IMAGE_BYTES
+
 export const isImageDocument = (document: TelegramDocument): boolean => {
   const mime = document.mime_type
   if (mime) {
@@ -56,6 +58,20 @@ export const isImageDocument = (document: TelegramDocument): boolean => {
     lowered.endsWith(".jpeg") ||
     lowered.endsWith(".webp")
   )
+}
+
+export const isPdfDocument = (document: TelegramDocument): boolean => {
+  const mime = document.mime_type
+  if (mime) {
+    return mime === "application/pdf"
+  }
+
+  const name = document.file_name
+  if (!name) {
+    return false
+  }
+
+  return name.toLowerCase().endsWith(".pdf")
 }
 
 export const pickLargestPhoto = (photos: TelegramPhotoSize[]): TelegramPhotoSize => {
@@ -79,7 +95,7 @@ export const buildDataUrl = (mime: string, bytes: Buffer): string => {
   return `data:${mime};base64,${base64}`
 }
 
-export const downloadTelegramImageAsAttachment = async (
+export const downloadTelegramFileAsAttachment = async (
   telegram: DownloadLinkProvider,
   fileId: string,
   options: {
@@ -88,8 +104,8 @@ export const downloadTelegramImageAsAttachment = async (
     maxBytes?: number
     declaredSize?: number
   },
-): Promise<ImageAttachment> => {
-  const maxBytes = options.maxBytes ?? DEFAULT_MAX_IMAGE_BYTES
+): Promise<FileAttachment> => {
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_FILE_BYTES
   const declaredSize = options.declaredSize
   if (declaredSize != null && declaredSize > maxBytes) {
     throw new TelegramImageTooLargeError(declaredSize, maxBytes)
@@ -114,6 +130,17 @@ export const downloadTelegramImageAsAttachment = async (
     byteLength: bytes.byteLength,
   }
 }
+
+export const downloadTelegramImageAsAttachment = async (
+  telegram: DownloadLinkProvider,
+  fileId: string,
+  options: {
+    mime: string
+    filename?: string
+    maxBytes?: number
+    declaredSize?: number
+  },
+): Promise<FileAttachment> => downloadTelegramFileAsAttachment(telegram, fileId, options)
 
 const formatBytes = (bytes: number): string => {
   const mb = bytes / (1024 * 1024)

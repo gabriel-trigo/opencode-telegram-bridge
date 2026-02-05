@@ -13,8 +13,10 @@ import { splitTelegramMessage } from "./telegram.js"
 import {
   DEFAULT_MAX_IMAGE_BYTES,
   TelegramImageTooLargeError,
+  downloadTelegramFileAsAttachment,
   downloadTelegramImageAsAttachment,
   isImageDocument,
+  isPdfDocument,
   pickLargestPhoto,
 } from "./telegram-image.js"
 import {
@@ -290,7 +292,9 @@ export const startBot = (
         if (!timedOut) {
           const message =
             error instanceof Error &&
-            error.message.includes("does not support image input")
+            (error.message.includes("does not support image input") ||
+              error.message.includes("does not support PDF input") ||
+              error.message.includes("does not expose modalities"))
               ? error.message
               : "OpenCode error. Check server logs."
           await sendReply(chatId, replyToMessageId, message)
@@ -750,8 +754,10 @@ export const startBot = (
 
     const userLabel = formatUserLabel(ctx.from)
     const document = ctx.message.document
-    if (!isImageDocument(document)) {
-      await ctx.reply("Unsupported document type. Please send an image.")
+    const isImage = isImageDocument(document)
+    const isPdf = isPdfDocument(document)
+    if (!isImage && !isPdf) {
+      await ctx.reply("Unsupported document type. Please send an image or PDF.")
       return
     }
 
@@ -759,22 +765,18 @@ export const startBot = (
     const mime = document.mime_type ?? "application/octet-stream"
     const filename = document.file_name
     try {
-      const attachment = await downloadTelegramImageAsAttachment(
-        ctx.telegram,
-        document.file_id,
-        {
-          mime,
-          ...(filename ? { filename } : {}),
-          maxBytes: DEFAULT_MAX_IMAGE_BYTES,
-          ...(document.file_size != null
-            ? { declaredSize: document.file_size }
-            : {}),
-        },
-      )
+      const attachment = await downloadTelegramFileAsAttachment(ctx.telegram, document.file_id, {
+        mime,
+        ...(filename ? { filename } : {}),
+        maxBytes: DEFAULT_MAX_IMAGE_BYTES,
+        ...(document.file_size != null ? { declaredSize: document.file_size } : {}),
+      })
 
       const text = caption.trim()
         ? caption
-        : "Please analyze the attached image."
+        : isPdf
+          ? "Please analyze the attached PDF."
+          : "Please analyze the attached image."
 
       runPrompt(ctx, userLabel, {
         text,
