@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.4.0
+
+### Minor Changes
+
+- fdc7986: Add support for sending Telegram PDF documents as prompt inputs (gated on model PDF modality support).
+
 ## 1.3.0
 
 ### Minor Changes
