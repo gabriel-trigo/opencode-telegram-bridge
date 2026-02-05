@@ -1,5 +1,11 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
-import type { GlobalEvent, Part, PermissionRequest, Provider } from "@opencode-ai/sdk/v2"
+import type {
+  Config,
+  GlobalEvent,
+  Part,
+  PermissionRequest,
+  Provider,
+} from "@opencode-ai/sdk/v2"
 
 import type { OpencodeConfig } from "./config.js"
 
@@ -7,7 +13,7 @@ export type OpencodeBridge = {
   ensureSessionId: (chatId: number, projectDir: string) => Promise<string>
   promptFromChat: (
     chatId: number,
-    text: string,
+    input: PromptInput,
     projectDir: string,
     options?: PromptOptions,
   ) => Promise<PromptResult>
@@ -42,6 +48,15 @@ export type PromptOptions = {
   signal?: AbortSignal
   model?: ModelRef
   sessionId?: string
+}
+
+export type PromptInput = {
+  text: string
+  files?: Array<{
+    mime: string
+    filename?: string
+    dataUrl: string
+  }>
 }
 
 export type PermissionReply = "once" | "always" | "reject"
@@ -92,6 +107,38 @@ const requireData = <T>(
   }
 
   return result.data as NonNullable<T>
+}
+
+const parseModelRef = (value: string): ModelRef => {
+  const [providerID, modelID] = value.split("/")
+  if (!providerID || !modelID) {
+    throw new Error(`Unexpected OpenCode model format: ${value}`)
+  }
+
+  return { providerID, modelID }
+}
+
+const modelSupportsImageInput = (providers: Provider[], model: ModelRef): boolean => {
+  const provider = providers.find((entry) => entry.id === model.providerID)
+  if (!provider) {
+    return false
+  }
+
+  const info = provider.models[model.modelID]
+  if (!info) {
+    return false
+  }
+
+  return Boolean(info.capabilities?.input?.image)
+}
+
+const resolveDefaultModel = (config: Config): ModelRef => {
+  const model = config.model
+  if (!model) {
+    throw new Error("OpenCode config has no default model configured")
+  }
+
+  return parseModelRef(model)
 }
 
 const buildSessionKey = (chatId: number, projectDir: string) =>
@@ -170,7 +217,7 @@ export const createOpencodeBridge = (
     async ensureSessionId(chatId, projectDir) {
       return ensureSession(chatId, projectDir)
     },
-    async promptFromChat(chatId, text, projectDir, options = {}) {
+    async promptFromChat(chatId, input, projectDir, options = {}) {
       const sessionId = options.sessionId ?? (await ensureSession(chatId, projectDir))
 
       /*
@@ -181,15 +228,49 @@ export const createOpencodeBridge = (
         ? { signal: options.signal }
         : undefined
 
+      const text = input.text
+      const files = input.files ?? []
+
+      if (files.length > 0) {
+        const model = options.model
+          ? options.model
+          : resolveDefaultModel(
+              requireData(
+                await client.config.get({ directory: projectDir }),
+                "config.get",
+              ),
+            )
+        const providerResult = await client.config.providers({ directory: projectDir })
+        const providerData = requireData(providerResult, "config.providers")
+        const providers = providerData.providers
+        if (!modelSupportsImageInput(providers, model)) {
+          throw new Error(
+            `Model ${model.providerID}/${model.modelID} does not support image input.`,
+          )
+        }
+      }
+
       const body: {
         sessionID: string
         directory: string
         model?: ModelRef
-        parts: Array<{ type: "text"; text: string }>
+        parts: Array<
+          | { type: "text"; text: string }
+          | { type: "file"; mime: string; filename?: string; url: string }
+        >
       } = {
         sessionID: sessionId,
         directory: projectDir,
         parts: [{ type: "text", text }],
+      }
+
+      for (const file of files) {
+        body.parts.push({
+          type: "file",
+          mime: file.mime,
+          ...(file.filename ? { filename: file.filename } : {}),
+          url: file.dataUrl,
+        })
       }
 
       if (options.model) {

@@ -2,13 +2,21 @@ import { exec } from "node:child_process"
 import { promisify } from "node:util"
 
 import { Markup, Telegraf } from "telegraf"
+import { message } from "telegraf/filters"
 
 import type { BotConfig, RestartCommandConfig } from "./config.js"
-import type { OpencodeBridge, PermissionReply } from "./opencode.js"
+import type { OpencodeBridge, PermissionReply, PromptInput } from "./opencode.js"
 import { createPromptGuard } from "./prompt-guard.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
 import type { ChatModelStore, ChatProjectStore } from "./state.js"
 import { splitTelegramMessage } from "./telegram.js"
+import {
+  DEFAULT_MAX_IMAGE_BYTES,
+  TelegramImageTooLargeError,
+  downloadTelegramImageAsAttachment,
+  isImageDocument,
+  pickLargestPhoto,
+} from "./telegram-image.js"
 import {
   buildPermissionKeyboardSpec,
   buildPermissionSummary,
@@ -196,6 +204,101 @@ export const startBot = (
 
   const setChatProjectAlias = (chatId: number, alias: string) => {
     chatProjects.setActiveAlias(chatId, alias)
+  }
+
+  const getProjectForChat = (chatId: number) => {
+    const activeAlias = getChatProjectAlias(chatId)
+    const project = projects.getProject(activeAlias)
+    if (!project) {
+      throw new Error("Missing project configuration.")
+    }
+    return project
+  }
+
+  const runPrompt = (
+    ctx: {
+      from?: unknown
+      chat?: { id?: number } | undefined
+      message?: { message_id?: number } | undefined
+      reply: (text: string) => Promise<unknown>
+    },
+    userLabel: string,
+    input: PromptInput,
+  ) => {
+    const chatId = ctx.chat?.id
+    const replyToMessageId = ctx.message?.message_id
+    if (!chatId) {
+      console.warn("Missing chat id for incoming message", { userLabel })
+      void ctx.reply("Missing chat context.")
+      return
+    }
+
+    let project
+    try {
+      project = getProjectForChat(chatId)
+    } catch (error) {
+      console.error("Missing project for chat", { chatId, error })
+      void ctx.reply("Missing project configuration.")
+      return
+    }
+
+    let timedOut = false
+    const abortController = promptGuard.tryStart(chatId, replyToMessageId, () => {
+      timedOut = true
+      void sendReply(
+        chatId,
+        replyToMessageId,
+        "OpenCode request timed out. You can send a new message.",
+      )
+    })
+
+    if (!abortController) {
+      void sendReply(
+        chatId,
+        replyToMessageId,
+        "Your previous message has not been replied to yet. This message will be ignored.",
+      )
+      return
+    }
+
+    void (async () => {
+      try {
+        const sessionId = await opencode.ensureSessionId(chatId, project.path)
+        promptGuard.setSessionId(chatId, abortController, sessionId)
+        const storedModel = chatModels.getModel(chatId, project.path)
+        const promptOptions = storedModel
+          ? { signal: abortController.signal, model: storedModel, sessionId }
+          : { signal: abortController.signal, sessionId }
+        const result = await opencode.promptFromChat(
+          chatId,
+          input,
+          project.path,
+          promptOptions,
+        )
+        if (!storedModel && result.model) {
+          chatModels.setModel(chatId, project.path, result.model)
+        }
+        if (!timedOut) {
+          await sendReply(chatId, replyToMessageId, result.reply)
+        }
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          return
+        }
+
+        console.error("Failed to send prompt to OpenCode", error)
+        if (!timedOut) {
+          const message =
+            error instanceof Error &&
+            error.message.includes("does not support image input")
+              ? error.message
+              : "OpenCode error. Check server logs."
+          await sendReply(chatId, replyToMessageId, message)
+        }
+      } finally {
+        promptGuard.finish(chatId)
+      }
+    })()
   }
 
   bot.start(async (ctx) => {
@@ -570,87 +673,127 @@ export const startBot = (
 
     const text = ctx.message.text
     const userLabel = formatUserLabel(ctx.from)
-    const chatId = ctx.chat?.id
-    const replyToMessageId = ctx.message.message_id
-
-    if (!chatId) {
-      console.warn("Missing chat id for incoming message", { userLabel })
-      void ctx.reply("Missing chat context.")
-      return
-    }
-
-    const activeAlias = getChatProjectAlias(chatId)
-    const project = projects.getProject(activeAlias)
-    if (!project) {
-      console.error("Missing project for chat", { chatId, activeAlias })
-      void ctx.reply("Missing project configuration.")
-      return
-    }
 
     console.log(`[telegram] ${userLabel}: ${text}`)
 
-    /*
-     * If we cannot start a prompt, we reply to the new message and ignore it.
-     * When a prompt times out, the guard clears the in-flight state so new
-     * messages can be accepted even if the original handler is still running.
-     */
-    /*
-     * timedOut becomes true only if our prompt timeout fires. Telegraf's
-     * handler timeout does not stop background work, so we guard against
-     * late replies by checking this flag before responding.
-     */
-    let timedOut = false
-    const abortController = promptGuard.tryStart(chatId, replyToMessageId, () => {
-      timedOut = true
-      void sendReply(
-        chatId,
-        replyToMessageId,
-        "OpenCode request timed out. You can send a new message.",
-      )
-    })
+    runPrompt(ctx, userLabel, { text })
+  })
 
-    if (!abortController) {
-      void sendReply(
-        chatId,
-        replyToMessageId,
-        "Your previous message has not been replied to yet. This message will be ignored.",
-      )
+  bot.on(message("photo"), async (ctx) => {
+    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+      await ctx.reply("Not authorized.")
       return
     }
 
-    void (async () => {
-      try {
-        const sessionId = await opencode.ensureSessionId(chatId, project.path)
-        promptGuard.setSessionId(chatId, abortController, sessionId)
-        const storedModel = chatModels.getModel(chatId, project.path)
-        const promptOptions = storedModel
-          ? { signal: abortController.signal, model: storedModel, sessionId }
-          : { signal: abortController.signal, sessionId }
-        const result = await opencode.promptFromChat(
-          chatId,
-          text,
-          project.path,
-          promptOptions,
-        )
-        if (!storedModel && result.model) {
-          chatModels.setModel(chatId, project.path, result.model)
-        }
-        if (!timedOut) {
-          await sendReply(chatId, replyToMessageId, result.reply)
-        }
-      } catch (error) {
-        if (abortController.signal.aborted) {
-          return
-        }
+    if (!ctx.message || !("photo" in ctx.message)) {
+      return
+    }
 
-        console.error("Failed to send prompt to OpenCode", error)
-        if (!timedOut) {
-          await sendReply(chatId, replyToMessageId, "OpenCode error. Check server logs.")
-        }
-      } finally {
-        promptGuard.finish(chatId)
-      }
-    })()
+    if (isCommandMessage(ctx.message)) {
+      return
+    }
+
+    const userLabel = formatUserLabel(ctx.from)
+    const photos = ctx.message.photo
+    const caption = ctx.message.caption ?? ""
+    const largest = pickLargestPhoto(photos)
+
+    try {
+      const attachment = await downloadTelegramImageAsAttachment(
+        ctx.telegram,
+        largest.file_id,
+        {
+          mime: "image/jpeg",
+          filename: "photo.jpg",
+          maxBytes: DEFAULT_MAX_IMAGE_BYTES,
+          ...(largest.file_size != null ? { declaredSize: largest.file_size } : {}),
+        },
+      )
+
+      const text = caption.trim()
+        ? caption
+        : "Please analyze the attached image."
+
+      runPrompt(ctx, userLabel, {
+        text,
+        files: [
+          {
+            mime: attachment.mime,
+            ...(attachment.filename ? { filename: attachment.filename } : {}),
+            dataUrl: attachment.dataUrl,
+          },
+        ],
+      })
+    } catch (error) {
+      console.error("Failed to handle Telegram photo", error)
+      const message =
+        error instanceof TelegramImageTooLargeError
+          ? error.message
+          : "Failed to process image."
+      await ctx.reply(message)
+    }
+  })
+
+  bot.on(message("document"), async (ctx) => {
+    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+      await ctx.reply("Not authorized.")
+      return
+    }
+
+    if (!ctx.message || !("document" in ctx.message)) {
+      return
+    }
+
+    if (isCommandMessage(ctx.message)) {
+      return
+    }
+
+    const userLabel = formatUserLabel(ctx.from)
+    const document = ctx.message.document
+    if (!isImageDocument(document)) {
+      await ctx.reply("Unsupported document type. Please send an image.")
+      return
+    }
+
+    const caption = ctx.message.caption ?? ""
+    const mime = document.mime_type ?? "application/octet-stream"
+    const filename = document.file_name
+    try {
+      const attachment = await downloadTelegramImageAsAttachment(
+        ctx.telegram,
+        document.file_id,
+        {
+          mime,
+          ...(filename ? { filename } : {}),
+          maxBytes: DEFAULT_MAX_IMAGE_BYTES,
+          ...(document.file_size != null
+            ? { declaredSize: document.file_size }
+            : {}),
+        },
+      )
+
+      const text = caption.trim()
+        ? caption
+        : "Please analyze the attached image."
+
+      runPrompt(ctx, userLabel, {
+        text,
+        files: [
+          {
+            mime: attachment.mime,
+            ...(attachment.filename ? { filename: attachment.filename } : {}),
+            dataUrl: attachment.dataUrl,
+          },
+        ],
+      })
+    } catch (error) {
+      console.error("Failed to handle Telegram document", error)
+      const message =
+        error instanceof TelegramImageTooLargeError
+          ? error.message
+          : "Failed to process image."
+      await ctx.reply(message)
+    }
   })
 
   bot.catch((error, ctx) => {

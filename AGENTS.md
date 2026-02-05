@@ -1,7 +1,7 @@
 # OpenCode Telegram Bridge
 
 ## Project goal
-Run a Telegram bot that forwards messages to an OpenCode backend and returns responses. The MVP focuses on reliable message intake, allowlisted access, and clean service operation with text-only request/response.
+Run a Telegram bot that forwards Telegram messages to an OpenCode backend and returns responses. The MVP focuses on reliable message intake, allowlisted access, and clean service operation with text + single-image request/response.
 
 ## Documentation guidelines
 - Keep documentation (README, docs, AGENTS) lean, extremely clear, and always up to date.
