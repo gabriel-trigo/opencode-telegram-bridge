@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.5.1
+
+### Patch Changes
+
+- 2afad70: Fix PDF capability check for OpenCode models.
+
 ## 1.5.0
 
 ### Minor Changes
