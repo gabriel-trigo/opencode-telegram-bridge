@@ -150,6 +150,17 @@ const modelSupportsPdfInput = (providers: Provider[], model: ModelRef): boolean 
     return false
   }
 
+  const capabilities = (info as { capabilities?: unknown }).capabilities
+  if (capabilities && typeof capabilities === "object") {
+    const input = (capabilities as { input?: unknown }).input
+    if (input && typeof input === "object") {
+      const pdf = (input as { pdf?: unknown }).pdf
+      if (typeof pdf === "boolean") {
+        return pdf
+      }
+    }
+  }
+
   const modalities = (info as { modalities?: unknown }).modalities
   if (!modalities || typeof modalities !== "object") {
     throw new OpencodeModelModalitiesError(

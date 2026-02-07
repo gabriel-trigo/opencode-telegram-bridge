@@ -14,11 +14,7 @@ const providersMock = vi.fn(async () => ({
         id: "openai",
         models: {
           "gpt-4.1": {
-            capabilities: { input: { image: true } },
-            modalities: {
-              input: ["text", "image", "pdf"],
-              output: ["text"],
-            },
+            capabilities: { input: { image: true, pdf: true } },
           },
         },
       },
@@ -83,16 +79,15 @@ describe("opencode pdf capability checks", () => {
     expect(promptMock).toHaveBeenCalledTimes(1)
   })
 
-  it("fails loudly when model does not expose modalities", async () => {
+  it("fails loudly when model does not expose modalities or capabilities", async () => {
     providersMock.mockResolvedValueOnce({
       data: {
         providers: [
           {
             id: "openai",
             models: {
-              "gpt-4.1": {
-                capabilities: { input: { image: true } },
-              },
+              // @ts-expect-error - intentionally omit capabilities and modalities
+              "gpt-4.1": {},
             },
           },
         ],
