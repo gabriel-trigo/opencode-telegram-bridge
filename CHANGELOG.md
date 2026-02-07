@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.5.0
+
+### Minor Changes
+
+- 4b11118: Add /model set command with validation and per-chat model selection.
+
 ## 1.4.0
 
 ### Minor Changes
