@@ -55,6 +55,7 @@ vi.mock("@opencode-ai/sdk/v2", () => {
 })
 
 import { createOpencodeBridge } from "../src/opencode.js"
+import { OpencodeModelModalitiesError } from "../src/errors.js"
 
 describe("opencode pdf capability checks", () => {
   it("allows a pdf file when model exposes pdf modality", async () => {
@@ -103,21 +104,24 @@ describe("opencode pdf capability checks", () => {
       serverUsername: "opencode",
     })
 
-    await expect(
-      bridge.promptFromChat(
-        123,
-        {
-          text: "analyze",
-          files: [
-            {
-              mime: "application/pdf",
-              filename: "test.pdf",
-              dataUrl: "data:application/pdf;base64,AA==",
-            },
-          ],
-        },
-        "/tmp",
-      ),
-    ).rejects.toThrow("Model does not expose modalities, can't check for PDF support")
+    const promise = bridge.promptFromChat(
+      123,
+      {
+        text: "analyze",
+        files: [
+          {
+            mime: "application/pdf",
+            filename: "test.pdf",
+            dataUrl: "data:application/pdf;base64,AA==",
+          },
+        ],
+      },
+      "/tmp",
+    )
+
+    await expect(promise).rejects.toThrow(OpencodeModelModalitiesError)
+    await expect(promise).rejects.toThrow(
+      "Model does not expose modalities, can't check for PDF support",
+    )
   })
 })

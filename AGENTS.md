@@ -57,6 +57,9 @@ When new commands are added or changed, update this list and the command descrip
 ## Next task
 - Decide whether to add Docker packaging and release instructions.
 
+## Coding guidelines
+- Use custom error types instead of generic errors for better and cleaner error handling.
+
 ## Useful commands
 - Install dependencies: `npm install`
 - Install docs site deps: `pip install mkdocs-material`

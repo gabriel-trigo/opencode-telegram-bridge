@@ -3,6 +3,12 @@ import os from "node:os"
 import path from "node:path"
 
 import { createDatabase, type StoreOptions } from "./storage.js"
+import {
+  ProjectAliasError,
+  ProjectAliasNotFoundError,
+  ProjectAliasReservedError,
+  ProjectPathError,
+} from "./errors.js"
 
 export type ProjectRecord = {
   alias: string
@@ -21,7 +27,7 @@ export const HOME_PROJECT_ALIAS = "home"
 const normalizeAlias = (alias: string) => {
   const trimmed = alias.trim()
   if (!trimmed) {
-    throw new Error("Project alias is required")
+    throw new ProjectAliasError("Project alias is required")
   }
 
   return trimmed
@@ -42,14 +48,14 @@ const expandHomePath = (rawPath: string) => {
 const resolveProjectPath = (rawPath: string) => {
   const trimmed = rawPath.trim()
   if (!trimmed) {
-    throw new Error("Project path is required")
+    throw new ProjectPathError("Project path is required")
   }
 
   const expanded = expandHomePath(trimmed)
   const resolved = path.resolve(expanded)
   const stats = fs.statSync(resolved)
   if (!stats.isDirectory()) {
-    throw new Error("Project path must be a directory")
+    throw new ProjectPathError("Project path must be a directory")
   }
 
   return resolved
@@ -85,7 +91,9 @@ export const createProjectStore = (
     addProject: (alias: string, projectPath: string) => {
       const normalized = normalizeAlias(alias)
       if (normalized === HOME_PROJECT_ALIAS) {
-        throw new Error("Cannot add project using reserved alias 'home'")
+        throw new ProjectAliasReservedError(
+          "Cannot add project using reserved alias 'home'",
+        )
       }
 
       const resolved = resolveProjectPath(projectPath)
@@ -98,14 +106,16 @@ export const createProjectStore = (
     removeProject: (alias: string) => {
       const normalized = normalizeAlias(alias)
       if (normalized === HOME_PROJECT_ALIAS) {
-        throw new Error("Cannot remove the home project")
+        throw new ProjectAliasReservedError("Cannot remove the home project")
       }
 
       const result = db
         .prepare("DELETE FROM projects WHERE alias = ?")
         .run(normalized)
       if (result.changes === 0) {
-        throw new Error(`Project alias '${normalized}' not found`)
+        throw new ProjectAliasNotFoundError(
+          `Project alias '${normalized}' not found`,
+        )
       }
     },
   }

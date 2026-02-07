@@ -44,6 +44,7 @@ vi.mock("@opencode-ai/sdk/v2", () => {
 })
 
 import { createOpencodeBridge } from "../src/opencode.js"
+import { OpencodeModelCapabilityError } from "../src/errors.js"
 
 describe("opencode image capability checks", () => {
   it("throws a clear error when model does not support image input", async () => {
@@ -52,20 +53,21 @@ describe("opencode image capability checks", () => {
       serverUsername: "opencode",
     })
 
-    await expect(
-      bridge.promptFromChat(
-        123,
-        {
-          text: "analyze",
-          files: [
-            {
-              mime: "image/png",
-              dataUrl: "data:image/png;base64,AA==",
-            },
-          ],
-        },
-        "/tmp",
-      ),
-    ).rejects.toThrow("does not support image input")
+    const promise = bridge.promptFromChat(
+      123,
+      {
+        text: "analyze",
+        files: [
+          {
+            mime: "image/png",
+            dataUrl: "data:image/png;base64,AA==",
+          },
+        ],
+      },
+      "/tmp",
+    )
+
+    await expect(promise).rejects.toThrow(OpencodeModelCapabilityError)
+    await expect(promise).rejects.toThrow("does not support image input")
   })
 })

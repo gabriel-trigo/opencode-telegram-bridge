@@ -10,6 +10,10 @@ import {
   isPdfDocument,
   pickLargestPhoto,
 } from "../src/telegram-image.js"
+import {
+  TelegramFileDownloadError,
+  TelegramPhotoSelectionError,
+} from "../src/errors.js"
 
 describe("telegram-image", () => {
   it("picks the largest photo by area", () => {
@@ -19,6 +23,13 @@ describe("telegram-image", () => {
       { file_id: "c", width: 300, height: 50 },
     ])
     expect(picked.file_id).toBe("b")
+  })
+
+  it("throws when no photos are provided", () => {
+    expect(() => pickLargestPhoto([])).toThrowError(TelegramPhotoSelectionError)
+    expect(() => pickLargestPhoto([])).toThrowError(
+      "Expected at least one photo size",
+    )
   })
 
   it("recognizes image documents by mime type", () => {
@@ -93,6 +104,33 @@ describe("telegram-image", () => {
       expect(attachment.filename).toBe("test.pdf")
       expect(attachment.dataUrl.startsWith("data:application/pdf;base64,")).toBe(true)
       expect(attachment.byteLength).toBe(3)
+    } finally {
+      // @ts-expect-error - restore
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it("throws when telegram download fails", async () => {
+    const telegram = {
+      getFileLink: vi.fn(async () => new URL("https://example.com/file")),
+    }
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      arrayBuffer: async () => Buffer.from([]),
+    }))
+    const originalFetch = globalThis.fetch
+    // @ts-expect-error - test override
+    globalThis.fetch = fetchMock
+
+    try {
+      await expect(
+        downloadTelegramFileAsAttachment(telegram, "file", {
+          mime: "application/pdf",
+          filename: "test.pdf",
+          maxBytes: DEFAULT_MAX_IMAGE_BYTES,
+        }),
+      ).rejects.toBeInstanceOf(TelegramFileDownloadError)
     } finally {
       // @ts-expect-error - restore
       globalThis.fetch = originalFetch

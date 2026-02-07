@@ -1,3 +1,5 @@
+import { ConfigError, ConfigValidationError } from "./errors.js"
+
 export type BotConfig = {
   botToken: string
   allowedUserId: number
@@ -21,12 +23,12 @@ export type RestartCommandConfig = {
 
 const parseAllowedUserId = (rawValue: string | undefined): number => {
   if (!rawValue) {
-    throw new Error("Missing TELEGRAM_ALLOWED_USER_ID")
+    throw new ConfigError("Missing TELEGRAM_ALLOWED_USER_ID")
   }
 
   const parsedValue = Number(rawValue)
   if (!Number.isInteger(parsedValue)) {
-    throw new Error("TELEGRAM_ALLOWED_USER_ID must be an integer")
+    throw new ConfigValidationError("TELEGRAM_ALLOWED_USER_ID must be an integer")
   }
 
   return parsedValue
@@ -42,7 +44,7 @@ const parseDurationMs = (
 
   const parsedValue = Number(rawValue)
   if (!Number.isFinite(parsedValue) || parsedValue < 0) {
-    throw new Error(`${label} must be a non-negative number`)
+    throw new ConfigValidationError(`${label} must be a non-negative number`)
   }
 
   return parsedValue
@@ -51,13 +53,13 @@ const parseDurationMs = (
 export const loadConfig = (): BotConfig => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN
   if (!botToken) {
-    throw new Error("Missing TELEGRAM_BOT_TOKEN")
+    throw new ConfigError("Missing TELEGRAM_BOT_TOKEN")
   }
 
   const allowedUserId = parseAllowedUserId(process.env.TELEGRAM_ALLOWED_USER_ID)
   const serverUrl = process.env.OPENCODE_SERVER_URL
   if (!serverUrl) {
-    throw new Error("Missing OPENCODE_SERVER_URL")
+    throw new ConfigError("Missing OPENCODE_SERVER_URL")
   }
 
   const opencode: OpencodeConfig = {
@@ -87,7 +89,7 @@ export const loadConfig = (): BotConfig => {
     "OPENCODE_RESTART_TIMEOUT_MS",
   )
   if (!restartCommand && restartTimeoutMs !== undefined) {
-    throw new Error(
+    throw new ConfigValidationError(
       "OPENCODE_RESTART_TIMEOUT_MS requires OPENCODE_RESTART_COMMAND",
     )
   }
@@ -105,7 +107,7 @@ export const loadConfig = (): BotConfig => {
     "OPENCODE_BRIDGE_RESTART_TIMEOUT_MS",
   )
   if (!bridgeRestartCommand && bridgeRestartTimeoutMs !== undefined) {
-    throw new Error(
+    throw new ConfigValidationError(
       "OPENCODE_BRIDGE_RESTART_TIMEOUT_MS requires OPENCODE_BRIDGE_RESTART_COMMAND",
     )
   }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest"
 
 import { loadConfig } from "../src/config.js"
+import { ConfigError, ConfigValidationError } from "../src/errors.js"
 
 const originalEnv = { ...process.env }
 
@@ -45,7 +46,10 @@ describe("loadConfig", () => {
       OPENCODE_BRIDGE_RESTART_TIMEOUT_MS: undefined,
     })
 
-    expect(() => loadConfig()).toThrowError("Missing TELEGRAM_BOT_TOKEN")
+    const run = () => loadConfig()
+
+    expect(run).toThrowError(ConfigError)
+    expect(run).toThrowError("Missing TELEGRAM_BOT_TOKEN")
   })
 
   it("throws when TELEGRAM_ALLOWED_USER_ID is missing", () => {
@@ -59,7 +63,10 @@ describe("loadConfig", () => {
       OPENCODE_BRIDGE_RESTART_TIMEOUT_MS: undefined,
     })
 
-    expect(() => loadConfig()).toThrowError("Missing TELEGRAM_ALLOWED_USER_ID")
+    const run = () => loadConfig()
+
+    expect(run).toThrowError(ConfigError)
+    expect(run).toThrowError("Missing TELEGRAM_ALLOWED_USER_ID")
   })
 
   it("throws when TELEGRAM_ALLOWED_USER_ID is not an integer", () => {
@@ -73,7 +80,10 @@ describe("loadConfig", () => {
       OPENCODE_BRIDGE_RESTART_TIMEOUT_MS: undefined,
     })
 
-    expect(() => loadConfig()).toThrowError(
+    const run = () => loadConfig()
+
+    expect(run).toThrowError(ConfigValidationError)
+    expect(run).toThrowError(
       "TELEGRAM_ALLOWED_USER_ID must be an integer",
     )
   })
@@ -89,7 +99,10 @@ describe("loadConfig", () => {
       OPENCODE_BRIDGE_RESTART_TIMEOUT_MS: undefined,
     })
 
-    expect(() => loadConfig()).toThrowError("Missing OPENCODE_SERVER_URL")
+    const run = () => loadConfig()
+
+    expect(run).toThrowError(ConfigError)
+    expect(run).toThrowError("Missing OPENCODE_SERVER_URL")
   })
 
   it("loads config with defaults", () => {
@@ -173,7 +186,10 @@ describe("loadConfig", () => {
       OPENCODE_BRIDGE_RESTART_TIMEOUT_MS: undefined,
     })
 
-    expect(() => loadConfig()).toThrowError(
+    const run = () => loadConfig()
+
+    expect(run).toThrowError(ConfigValidationError)
+    expect(run).toThrowError(
       "OPENCODE_RESTART_TIMEOUT_MS requires OPENCODE_RESTART_COMMAND",
     )
   })
@@ -209,7 +225,10 @@ describe("loadConfig", () => {
       OPENCODE_BRIDGE_RESTART_TIMEOUT_MS: "5000",
     })
 
-    expect(() => loadConfig()).toThrowError(
+    const run = () => loadConfig()
+
+    expect(run).toThrowError(ConfigValidationError)
+    expect(run).toThrowError(
       "OPENCODE_BRIDGE_RESTART_TIMEOUT_MS requires OPENCODE_BRIDGE_RESTART_COMMAND",
     )
   })

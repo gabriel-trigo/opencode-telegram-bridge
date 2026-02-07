@@ -8,6 +8,13 @@ import type {
 } from "@opencode-ai/sdk/v2"
 
 import type { OpencodeConfig } from "./config.js"
+import {
+  OpencodeConfigError,
+  OpencodeModelCapabilityError,
+  OpencodeModelFormatError,
+  OpencodeModelModalitiesError,
+  OpencodeRequestError,
+} from "./errors.js"
 
 export type OpencodeBridge = {
   ensureSessionId: (chatId: number, projectDir: string) => Promise<string>
@@ -103,7 +110,7 @@ const requireData = <T>(
   label: string,
 ): NonNullable<T> => {
   if (result.data == null) {
-    throw new Error(`OpenCode ${label} failed`)
+    throw new OpencodeRequestError(`OpenCode ${label} failed`)
   }
 
   return result.data as NonNullable<T>
@@ -112,7 +119,7 @@ const requireData = <T>(
 const parseModelRef = (value: string): ModelRef => {
   const [providerID, modelID] = value.split("/")
   if (!providerID || !modelID) {
-    throw new Error(`Unexpected OpenCode model format: ${value}`)
+    throw new OpencodeModelFormatError(`Unexpected OpenCode model format: ${value}`)
   }
 
   return { providerID, modelID }
@@ -145,12 +152,16 @@ const modelSupportsPdfInput = (providers: Provider[], model: ModelRef): boolean 
 
   const modalities = (info as { modalities?: unknown }).modalities
   if (!modalities || typeof modalities !== "object") {
-    throw new Error("Model does not expose modalities, can't check for PDF support")
+    throw new OpencodeModelModalitiesError(
+      "Model does not expose modalities, can't check for PDF support",
+    )
   }
 
   const input = (modalities as { input?: unknown }).input
   if (!Array.isArray(input)) {
-    throw new Error("Model does not expose modalities, can't check for PDF support")
+    throw new OpencodeModelModalitiesError(
+      "Model does not expose modalities, can't check for PDF support",
+    )
   }
 
   return input.includes("pdf")
@@ -159,7 +170,9 @@ const modelSupportsPdfInput = (providers: Provider[], model: ModelRef): boolean 
 const resolveDefaultModel = (config: Config): ModelRef => {
   const model = config.model
   if (!model) {
-    throw new Error("OpenCode config has no default model configured")
+    throw new OpencodeConfigError(
+      "OpenCode config has no default model configured",
+    )
   }
 
   return parseModelRef(model)
@@ -272,13 +285,13 @@ export const createOpencodeBridge = (
         const providers = providerData.providers
 
         if (needsImageSupport && !modelSupportsImageInput(providers, model)) {
-          throw new Error(
+          throw new OpencodeModelCapabilityError(
             `Model ${model.providerID}/${model.modelID} does not support image input.`,
           )
         }
 
         if (needsPdfSupport && !modelSupportsPdfInput(providers, model)) {
-          throw new Error(
+          throw new OpencodeModelCapabilityError(
             `Model ${model.providerID}/${model.modelID} does not support PDF input.`,
           )
         }

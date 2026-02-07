@@ -7,6 +7,12 @@ import { stdin, stdout } from "node:process"
 import { fileURLToPath } from "node:url"
 
 import { runBot } from "./run.js"
+import {
+  CliCommandError,
+  CliInputError,
+  CliNotFoundError,
+  CliValidationError,
+} from "./errors.js"
 
 const die = (message: string) => {
   console.error(message)
@@ -20,7 +26,7 @@ const runCommand = (command: string, args: string[]) => {
   })
 
   if (result.status !== 0) {
-    throw new Error(`Command failed: ${command} ${args.join(" ")}`)
+    throw new CliCommandError(`Command failed: ${command} ${args.join(" ")}`)
   }
 }
 
@@ -37,7 +43,7 @@ const resolveOpencodePath = () => {
 
   const opencodePath = result.stdout.trim()
   if (!opencodePath || result.status !== 0) {
-    throw new Error("opencode CLI not found in PATH")
+    throw new CliNotFoundError("opencode CLI not found in PATH")
   }
 
   return opencodePath
@@ -57,7 +63,7 @@ const readAnswer = async (
   }
 
   if (!answer && options.required) {
-    throw new Error(`Missing ${prompt}`)
+    throw new CliInputError(`Missing ${prompt}`)
   }
 
   return answer
@@ -101,7 +107,7 @@ const readSecret = async (
   }
 
   if (!answer && options.required) {
-    throw new Error(`Missing ${prompt}`)
+    throw new CliInputError(`Missing ${prompt}`)
   }
 
   return answer
@@ -305,7 +311,7 @@ const runSystemdSetup = async () => {
     required: true,
   })
   if (!Number.isInteger(Number(allowedUserId))) {
-    throw new Error("TELEGRAM_ALLOWED_USER_ID must be an integer")
+    throw new CliValidationError("TELEGRAM_ALLOWED_USER_ID must be an integer")
   }
   const serverUrl = await readAnswer("OPENCODE_SERVER_URL", {
     defaultValue: "http://127.0.0.1:4096",
@@ -434,7 +440,7 @@ const runLaunchdSetup = async () => {
     required: true,
   })
   if (!Number.isInteger(Number(allowedUserId))) {
-    throw new Error("TELEGRAM_ALLOWED_USER_ID must be an integer")
+    throw new CliValidationError("TELEGRAM_ALLOWED_USER_ID must be an integer")
   }
   const serverUrl = await readAnswer("OPENCODE_SERVER_URL", {
     defaultValue: "http://127.0.0.1:4096",

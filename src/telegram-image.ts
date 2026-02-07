@@ -1,3 +1,9 @@
+import {
+  BridgeError,
+  TelegramFileDownloadError,
+  TelegramPhotoSelectionError,
+} from "./errors.js"
+
 export type TelegramPhotoSize = {
   file_id: string
   width: number
@@ -23,7 +29,7 @@ export type FileAttachment = {
   byteLength: number
 }
 
-export class TelegramImageTooLargeError extends Error {
+export class TelegramImageTooLargeError extends BridgeError {
   override name = "TelegramImageTooLargeError"
 
   constructor(
@@ -76,7 +82,7 @@ export const isPdfDocument = (document: TelegramDocument): boolean => {
 
 export const pickLargestPhoto = (photos: TelegramPhotoSize[]): TelegramPhotoSize => {
   if (photos.length === 0) {
-    throw new Error("Expected at least one photo size")
+    throw new TelegramPhotoSelectionError("Expected at least one photo size")
   }
 
   const sorted = [...photos].sort((a, b) => {
@@ -114,7 +120,9 @@ export const downloadTelegramFileAsAttachment = async (
   const url = await telegram.getFileLink(fileId)
   const response = await fetch(url)
   if (!response.ok) {
-    throw new Error(`Failed to download Telegram file (status ${response.status})`)
+    throw new TelegramFileDownloadError(
+      `Failed to download Telegram file (status ${response.status})`,
+    )
   }
 
   const arrayBuffer = await response.arrayBuffer()

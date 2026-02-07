@@ -20,6 +20,12 @@ import {
   pickLargestPhoto,
 } from "./telegram-image.js"
 import {
+  OpencodeModelCapabilityError,
+  OpencodeModelModalitiesError,
+  ProjectAliasNotFoundError,
+  ProjectConfigurationError,
+} from "./errors.js"
+import {
   buildPermissionKeyboardSpec,
   buildPermissionSummary,
   formatCommandOutput,
@@ -212,7 +218,7 @@ export const startBot = (
     const activeAlias = getChatProjectAlias(chatId)
     const project = projects.getProject(activeAlias)
     if (!project) {
-      throw new Error("Missing project configuration.")
+      throw new ProjectConfigurationError("Missing project configuration.")
     }
     return project
   }
@@ -290,15 +296,20 @@ export const startBot = (
 
         console.error("Failed to send prompt to OpenCode", error)
         if (!timedOut) {
-          const message =
-            error instanceof Error &&
-            (error.message.includes("does not support image input") ||
-              error.message.includes("does not support PDF input") ||
-              error.message.includes("does not expose modalities"))
-              ? error.message
-              : "OpenCode error. Check server logs."
-          await sendReply(chatId, replyToMessageId, message)
-        }
+        const isModelCapabilityError =
+          error instanceof OpencodeModelCapabilityError ||
+          error instanceof OpencodeModelModalitiesError
+        const hasMatchingMessage =
+          error instanceof Error &&
+          (error.message.includes("does not support image input") ||
+            error.message.includes("does not support PDF input") ||
+            error.message.includes("does not expose modalities"))
+        const message =
+          isModelCapabilityError || hasMatchingMessage
+            ? (error as Error).message
+            : "OpenCode error. Check server logs."
+        await sendReply(chatId, replyToMessageId, message)
+      }
       } finally {
         promptGuard.finish(chatId)
       }
@@ -342,7 +353,9 @@ export const startBot = (
           const activeAlias = getChatProjectAlias(chatId)
           const project = projects.getProject(activeAlias)
           if (!project) {
-            throw new Error(`Project alias '${activeAlias}' not found`)
+            throw new ProjectAliasNotFoundError(
+              `Project alias '${activeAlias}' not found`,
+            )
           }
 
           await ctx.reply(`${project.alias}: ${project.path}`)
@@ -383,7 +396,9 @@ export const startBot = (
 
           const project = projects.getProject(alias)
           if (!project) {
-            throw new Error(`Project alias '${alias}' not found`)
+            throw new ProjectAliasNotFoundError(
+              `Project alias '${alias}' not found`,
+            )
           }
 
           setChatProjectAlias(chatId, project.alias)

@@ -8,6 +8,10 @@ import {
   HOME_PROJECT_ALIAS,
   createProjectStore,
 } from "../src/projects.js"
+import {
+  ProjectAliasNotFoundError,
+  ProjectAliasReservedError,
+} from "../src/errors.js"
 
 const createTempStore = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-projects-"))
@@ -58,7 +62,13 @@ describe("project store", () => {
     const projectDir = fs.mkdtempSync(path.join(root, "project-"))
     try {
       expect(() => store.addProject("home", projectDir)).toThrowError(
+        ProjectAliasReservedError,
+      )
+      expect(() => store.addProject("home", projectDir)).toThrowError(
         "Cannot add project using reserved alias 'home'",
+      )
+      expect(() => store.removeProject("home")).toThrowError(
+        ProjectAliasReservedError,
       )
       expect(() => store.removeProject("home")).toThrowError(
         "Cannot remove the home project",
@@ -71,6 +81,9 @@ describe("project store", () => {
   it("throws when removing unknown aliases", () => {
     const { store, root } = createTempStore()
     try {
+      expect(() => store.removeProject("missing")).toThrowError(
+        ProjectAliasNotFoundError,
+      )
       expect(() => store.removeProject("missing")).toThrowError(
         "Project alias 'missing' not found",
       )
