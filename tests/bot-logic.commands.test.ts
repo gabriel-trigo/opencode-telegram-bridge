@@ -55,4 +55,11 @@ describe("parseModelCommand", () => {
       args: [],
     })
   })
+
+  it("parses set with model ref", () => {
+    expect(parseModelCommand("/model set openai/gpt-5.2-codex")).toEqual({
+      subcommand: "set",
+      args: ["openai/gpt-5.2-codex"],
+    })
+  })
 })

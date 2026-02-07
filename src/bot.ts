@@ -112,7 +112,7 @@ export const startBot = (
         command: "project",
         description: "Manage project aliases (list/current/add/remove/set)",
       },
-      { command: "model", description: "Show or list available models" },
+      { command: "model", description: "Show, list, or set the active model" },
       { command: "reset", description: "Reset the active project session" },
       { command: "abort", description: "Abort the in-flight prompt" },
     ]
@@ -443,7 +443,7 @@ export const startBot = (
     }
 
     const messageText = ctx.message?.text ?? ""
-    const { subcommand } = parseModelCommand(messageText)
+    const { subcommand, args } = parseModelCommand(messageText)
 
     try {
       switch (subcommand) {
@@ -468,8 +468,49 @@ export const startBot = (
           await ctx.reply(`Current model: ${model.providerID}/${model.modelID}`)
           return
         }
+        case "set": {
+          const rawModel = args[0]
+          if (!rawModel) {
+            await ctx.reply("Usage: /model set <provider>/<model>")
+            return
+          }
+
+          const [providerID, modelID] = rawModel.split("/")
+          if (!providerID || !modelID) {
+            await ctx.reply("Model must be in provider/model format. Use /model list.")
+            return
+          }
+
+          try {
+            const providers = await opencode.listModels(project.path)
+            const provider = providers.find((entry) => entry.id === providerID)
+            if (!provider) {
+              await ctx.reply(
+                `Model provider '${providerID}' not found. Use /model list.`,
+              )
+              return
+            }
+
+            const model = provider.models[modelID]
+            if (!model) {
+              await ctx.reply(
+                `Model '${providerID}/${modelID}' not found. Use /model list.`,
+              )
+              return
+            }
+
+            chatModels.setModel(chatId, project.path, { providerID, modelID })
+            await ctx.reply(`Current model set to ${providerID}/${modelID}.`)
+          } catch (error) {
+            console.error("Failed to set model", error)
+            await ctx.reply(
+              "Unexpected error when changing model. Check server logs.",
+            )
+          }
+          return
+        }
         default: {
-          await ctx.reply("Usage: /model [list]")
+          await ctx.reply("Usage: /model <current|list|set>")
         }
       }
     } catch (error) {

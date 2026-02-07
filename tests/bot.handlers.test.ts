@@ -780,6 +780,7 @@ describe("bot handler behavior", () => {
 
   it("/model covers current/list + error branches", async () => {
     const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
       promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
       resetSession: vi.fn(() => false),
       resetAllSessions: vi.fn(() => undefined),
@@ -847,12 +848,186 @@ describe("bot handler behavior", () => {
 
     const usageCtx = createTextCtx({ userId: 1, chatId: 10, text: "/model wat" })
     await bot.dispatchCommand("model", usageCtx)
-    expect(usageCtx.reply).toHaveBeenCalledWith("Usage: /model [list]")
+    expect(usageCtx.reply).toHaveBeenCalledWith("Usage: /model <current|list|set>")
 
     opencode.listModels.mockRejectedValueOnce(new Error("boom"))
     const errorCtx = createTextCtx({ userId: 1, chatId: 10, text: "/model list" })
     await bot.dispatchCommand("model", errorCtx)
     expect(errorCtx.reply).toHaveBeenCalledWith("boom")
+  })
+
+  it("/model set validates input, stores model, and overrides prompts", async () => {
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => [
+        {
+          id: "openai",
+          models: {
+            "gpt-5.2-codex": { name: "GPT-5.2 Codex" },
+            "gpt-5.2": { name: "GPT-5.2" },
+          },
+        },
+      ]),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    let storedModel: { providerID: string; modelID: string } | null = null
+    const chatModels = {
+      getModel: vi.fn(() => storedModel),
+      setModel: vi.fn((_chatId: number, _projectDir: string, model: any) => {
+        storedModel = model
+      }),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    const missingArg = createTextCtx({ userId: 1, chatId: 10, text: "/model set" })
+    await bot.dispatchCommand("model", missingArg)
+    expect(missingArg.reply).toHaveBeenCalledWith("Usage: /model set <provider>/<model>")
+
+    const invalidFormat = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "/model set gpt-5.2-codex",
+    })
+    await bot.dispatchCommand("model", invalidFormat)
+    expect(invalidFormat.reply).toHaveBeenCalledWith(
+      "Model must be in provider/model format. Use /model list.",
+    )
+
+    const missingProvider = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "/model set missing/gpt",
+    })
+    await bot.dispatchCommand("model", missingProvider)
+    expect(missingProvider.reply).toHaveBeenCalledWith(
+      "Model provider 'missing' not found. Use /model list.",
+    )
+
+    const missingModel = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "/model set openai/missing",
+    })
+    await bot.dispatchCommand("model", missingModel)
+    expect(missingModel.reply).toHaveBeenCalledWith(
+      "Model 'openai/missing' not found. Use /model list.",
+    )
+
+    const success = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "/model set openai/gpt-5.2-codex",
+    })
+    await bot.dispatchCommand("model", success)
+    expect(success.reply).toHaveBeenCalledWith(
+      "Current model set to openai/gpt-5.2-codex.",
+    )
+    expect(storedModel).toEqual({ providerID: "openai", modelID: "gpt-5.2-codex" })
+
+    const promptCtx = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "hello",
+      messageId: 99,
+    })
+    await bot.dispatchOn("text", promptCtx)
+    await flushMicrotasks()
+
+    expect(opencode.promptFromChat).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({ text: "hello" }),
+      "/home/user",
+      expect.objectContaining({
+        model: { providerID: "openai", modelID: "gpt-5.2-codex" },
+      }),
+    )
+  })
+
+  it("/model set reports unexpected errors", async () => {
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => {
+        throw new Error("boom")
+      }),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: vi.fn(() => null),
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    const ctx = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "/model set openai/gpt-5.2",
+    })
+    await bot.dispatchCommand("model", ctx)
+    expect(ctx.reply).toHaveBeenCalledWith(
+      "Unexpected error when changing model. Check server logs.",
+    )
   })
 
   it("/reset covers didReset and no-session branches", async () => {
