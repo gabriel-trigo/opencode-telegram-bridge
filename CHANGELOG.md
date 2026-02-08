@@ -1,5 +1,15 @@
 # opencode-telegram-bridge
 
+## 1.6.0
+
+### Minor Changes
+
+- ab52df2: Surface OpenCode `question` tool requests in Telegram.
+
+  - Listen for `question.asked` events and show questions with numbered option buttons.
+  - Treat the user's next message as the question answer when a question is pending.
+  - Improve prompt timeout diagnostics with structured JSON logs.
+
 ## 1.5.2
 
 ### Patch Changes
