@@ -449,9 +449,10 @@ describe("bot handler behavior", () => {
     await flushMicrotasks()
 
     expect(capturedSignal?.aborted).toBe(true)
+    expect(opencode.abortSession).toHaveBeenCalledWith("session-1", "/home/user")
     expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
       10,
-      "OpenCode request timed out. You can send a new message.",
+      "OpenCode request timed out. Server-side prompt aborted. You can send a new message.",
       expect.objectContaining({ reply_parameters: { message_id: 10 } }),
     )
 
@@ -469,6 +470,225 @@ describe("bot handler behavior", () => {
       10,
       "second",
       expect.objectContaining({ reply_parameters: { message_id: 11 } }),
+    )
+  })
+
+  it("timeout message reports session not ready when ensureSessionId is still pending", async () => {
+    vi.useFakeTimers()
+
+    let resolveSessionId: ((value: string) => void) | null = null
+    const pendingSessionId = new Promise<string>((resolve) => {
+      resolveSessionId = resolve
+    })
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => pendingSessionId),
+      promptFromChat: vi.fn(async () => ({ reply: "should-not-run", model: null })),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "first", messageId: 10 }),
+    )
+    await flushMicrotasks()
+
+    vi.advanceTimersByTime(1000)
+    await flushMicrotasks()
+
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "OpenCode request timed out. Nothing to abort yet (session not ready). You can send a new message.",
+      expect.objectContaining({ reply_parameters: { message_id: 10 } }),
+    )
+    expect(opencode.abortSession).not.toHaveBeenCalled()
+    expect(opencode.promptFromChat).not.toHaveBeenCalled()
+
+    resolveSessionId?.("session-1")
+    await flushMicrotasks()
+
+    // Still should not proceed to send the prompt after timing out.
+    expect(opencode.promptFromChat).not.toHaveBeenCalled()
+  })
+
+  it("timeout message reports when abort was not successful", async () => {
+    vi.useFakeTimers()
+
+    let capturedSignal: AbortSignal | undefined
+    const firstPrompt = new Promise((_resolve) => {
+      // never resolves
+    })
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async (_chatId: number, _text: string, _dir: string, options?: any) => {
+        capturedSignal = options?.signal
+        return firstPrompt as any
+      }),
+      abortSession: vi.fn(async () => false),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "first", messageId: 10 }),
+    )
+    await flushMicrotasks()
+
+    vi.advanceTimersByTime(1000)
+    await flushMicrotasks()
+
+    expect(capturedSignal?.aborted).toBe(true)
+    expect(opencode.abortSession).toHaveBeenCalledWith("session-1", "/home/user")
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "OpenCode request timed out. Tried to abort the server-side prompt, but it was not aborted. You can send a new message.",
+      expect.objectContaining({ reply_parameters: { message_id: 10 } }),
+    )
+  })
+
+  it("timeout message reports when abort throws", async () => {
+    vi.useFakeTimers()
+
+    const firstPrompt = new Promise((_resolve) => {
+      // never resolves
+    })
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async () => firstPrompt as any),
+      abortSession: vi.fn(async () => {
+        throw new Error("abort failed")
+      }),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "first", messageId: 10 }),
+    )
+    await flushMicrotasks()
+
+    vi.advanceTimersByTime(1000)
+    await flushMicrotasks()
+
+    expect(opencode.abortSession).toHaveBeenCalledWith("session-1", "/home/user")
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "OpenCode request timed out. Failed to abort the server-side prompt. You can send a new message.",
+      expect.objectContaining({ reply_parameters: { message_id: 10 } }),
     )
   })
 

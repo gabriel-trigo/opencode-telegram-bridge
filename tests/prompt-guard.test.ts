@@ -26,6 +26,10 @@ describe("prompt guard", () => {
     vi.advanceTimersByTime(1000)
 
     expect(onTimeout).toHaveBeenCalledTimes(1)
+    expect(onTimeout).toHaveBeenCalledWith({
+      replyToMessageId: 123,
+      sessionId: null,
+    })
     expect(controller?.signal.aborted).toBe(true)
     expect(guard.isInFlight(1)).toBe(false)
 

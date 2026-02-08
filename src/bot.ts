@@ -251,14 +251,48 @@ export const startBot = (
     }
 
     let timedOut = false
-    const abortController = promptGuard.tryStart(chatId, replyToMessageId, () => {
-      timedOut = true
-      void sendReply(
-        chatId,
-        replyToMessageId,
-        "OpenCode request timed out. You can send a new message.",
-      )
-    })
+    const abortController = promptGuard.tryStart(
+      chatId,
+      replyToMessageId,
+      ({ replyToMessageId: timeoutReplyToMessageId, sessionId }) => {
+        timedOut = true
+        void (async () => {
+          if (!sessionId) {
+            await sendReply(
+              chatId,
+              timeoutReplyToMessageId,
+              "OpenCode request timed out. Nothing to abort yet (session not ready). You can send a new message.",
+            )
+            return
+          }
+
+          try {
+            const aborted = await opencode.abortSession(sessionId, project.path)
+            if (aborted) {
+              await sendReply(
+                chatId,
+                timeoutReplyToMessageId,
+                "OpenCode request timed out. Server-side prompt aborted. You can send a new message.",
+              )
+              return
+            }
+
+            await sendReply(
+              chatId,
+              timeoutReplyToMessageId,
+              "OpenCode request timed out. Tried to abort the server-side prompt, but it was not aborted. You can send a new message.",
+            )
+          } catch (error) {
+            console.error("Failed to abort OpenCode session after timeout", error)
+            await sendReply(
+              chatId,
+              timeoutReplyToMessageId,
+              "OpenCode request timed out. Failed to abort the server-side prompt. You can send a new message.",
+            )
+          }
+        })()
+      },
+    )
 
     if (!abortController) {
       void sendReply(
@@ -273,6 +307,10 @@ export const startBot = (
       try {
         const sessionId = await opencode.ensureSessionId(chatId, project.path)
         promptGuard.setSessionId(chatId, abortController, sessionId)
+
+        if (abortController.signal.aborted) {
+          return
+        }
         const storedModel = chatModels.getModel(chatId, project.path)
         const promptOptions = storedModel
           ? { signal: abortController.signal, model: storedModel, sessionId }

@@ -1,8 +1,17 @@
+type PromptTimeoutInfo = {
+  replyToMessageId: number | undefined
+  sessionId: string | null
+}
+
 export type PromptGuard = {
+  /**
+   * `sessionId` may be null if the timeout fires before the OpenCode session is
+   * created/loaded.
+   */
   tryStart: (
     chatId: number,
     replyToMessageId: number | undefined,
-    onTimeout: () => void,
+    onTimeout: (info: PromptTimeoutInfo) => void,
   ) => AbortController | null
   setSessionId: (
     chatId: number,
@@ -36,7 +45,7 @@ export const createPromptGuard = (timeoutMs: number): PromptGuard => {
   const tryStart = (
     chatId: number,
     replyToMessageId: number | undefined,
-    onTimeout: () => void,
+    onTimeout: (info: PromptTimeoutInfo) => void,
   ) => {
     /*
      * This function is synchronous. It schedules a timeout and returns
@@ -58,9 +67,14 @@ export const createPromptGuard = (timeoutMs: number): PromptGuard => {
         return
       }
 
+      const timeoutInfo = {
+        replyToMessageId: entry.replyToMessageId,
+        sessionId: entry.sessionId,
+      }
+
       inFlight.delete(chatId)
       abortController.abort()
-      onTimeout()
+      onTimeout(timeoutInfo)
     }, timeoutMs)
 
     inFlight.set(chatId, {
