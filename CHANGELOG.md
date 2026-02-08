@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.5.2
+
+### Patch Changes
+
+- 2c71d04: Infer PDF MIME type from filename when Telegram omits `mime_type`, ensuring PDFs are sent to OpenCode with `application/pdf`.
+
 ## 1.5.1
 
 ### Patch Changes
