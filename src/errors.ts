@@ -26,4 +26,5 @@ export class ProjectConfigurationError extends BridgeError {}
 export class ProjectPathError extends BridgeError {}
 
 export class TelegramFileDownloadError extends BridgeError {}
+export class TelegramFileDownloadTimeoutError extends TelegramFileDownloadError {}
 export class TelegramPhotoSelectionError extends BridgeError {}

@@ -12,6 +12,7 @@ import {
 } from "../src/telegram-image.js"
 import {
   TelegramFileDownloadError,
+  TelegramFileDownloadTimeoutError,
   TelegramPhotoSelectionError,
 } from "../src/errors.js"
 
@@ -90,8 +91,7 @@ describe("telegram-image", () => {
       status: 200,
     }))
     const originalFetch = globalThis.fetch
-    // @ts-expect-error - test override
-    globalThis.fetch = fetchMock
+    globalThis.fetch = fetchMock as any
 
     try {
       const attachment = await downloadTelegramFileAsAttachment(telegram, "file", {
@@ -105,7 +105,6 @@ describe("telegram-image", () => {
       expect(attachment.dataUrl.startsWith("data:application/pdf;base64,")).toBe(true)
       expect(attachment.byteLength).toBe(3)
     } finally {
-      // @ts-expect-error - restore
       globalThis.fetch = originalFetch
     }
   })
@@ -120,8 +119,7 @@ describe("telegram-image", () => {
       arrayBuffer: async () => Buffer.from([]),
     }))
     const originalFetch = globalThis.fetch
-    // @ts-expect-error - test override
-    globalThis.fetch = fetchMock
+    globalThis.fetch = fetchMock as any
 
     try {
       await expect(
@@ -132,8 +130,53 @@ describe("telegram-image", () => {
         }),
       ).rejects.toBeInstanceOf(TelegramFileDownloadError)
     } finally {
-      // @ts-expect-error - restore
       globalThis.fetch = originalFetch
+    }
+  })
+
+  it("times out when download takes too long", async () => {
+    vi.useFakeTimers()
+
+    const telegram = {
+      getFileLink: vi.fn(async () => new URL("https://example.com/file")),
+    }
+
+    const fetchMock = vi.fn(async (_url: any, init?: any) => {
+      const signal = init?.signal as AbortSignal | undefined
+      return await new Promise((_resolve, reject) => {
+        signal?.addEventListener(
+          "abort",
+          () => {
+            const error = new Error("aborted") as Error & { name: string }
+            error.name = "AbortError"
+            reject(error)
+          },
+          { once: true },
+        )
+      })
+    })
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = fetchMock as any
+
+    try {
+      const promise = downloadTelegramFileAsAttachment(telegram, "file", {
+        mime: "application/pdf",
+        filename: "test.pdf",
+        maxBytes: DEFAULT_MAX_IMAGE_BYTES,
+        timeoutMs: 30,
+      })
+
+      const expectation = expect(promise).rejects.toBeInstanceOf(
+        TelegramFileDownloadTimeoutError,
+      )
+
+      await vi.advanceTimersByTimeAsync(30)
+
+      await expectation
+    } finally {
+      globalThis.fetch = originalFetch
+      vi.useRealTimers()
     }
   })
 })

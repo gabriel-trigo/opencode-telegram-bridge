@@ -114,6 +114,7 @@ describe("loadConfig", () => {
       OPENCODE_SERVER_PASSWORD: undefined,
       OPENCODE_PROMPT_TIMEOUT_MS: undefined,
       TELEGRAM_HANDLER_TIMEOUT_MS: undefined,
+      TELEGRAM_FILE_DOWNLOAD_TIMEOUT_MS: undefined,
       OPENCODE_RESTART_COMMAND: undefined,
       OPENCODE_RESTART_TIMEOUT_MS: undefined,
       OPENCODE_BRIDGE_RESTART_COMMAND: undefined,
@@ -130,6 +131,7 @@ describe("loadConfig", () => {
     expect(config.opencode.serverPassword).toBeUndefined()
     expect(config.promptTimeoutMs).toBe(promptTimeoutMs)
     expect(config.handlerTimeoutMs).toBe(promptTimeoutMs + 30_000)
+    expect(config.telegramDownloadTimeoutMs).toBe(30_000)
     expect(config.opencodeRestart).toBeUndefined()
   })
 
@@ -142,6 +144,7 @@ describe("loadConfig", () => {
       OPENCODE_SERVER_PASSWORD: "secret",
       OPENCODE_PROMPT_TIMEOUT_MS: "120000",
       TELEGRAM_HANDLER_TIMEOUT_MS: "300000",
+      TELEGRAM_FILE_DOWNLOAD_TIMEOUT_MS: "1234",
       OPENCODE_RESTART_COMMAND: undefined,
       OPENCODE_RESTART_TIMEOUT_MS: undefined,
       OPENCODE_BRIDGE_RESTART_COMMAND: undefined,
@@ -154,6 +157,7 @@ describe("loadConfig", () => {
     expect(config.opencode.serverPassword).toBe("secret")
     expect(config.promptTimeoutMs).toBe(120000)
     expect(config.handlerTimeoutMs).toBe(300000)
+    expect(config.telegramDownloadTimeoutMs).toBe(1234)
   })
 
   it("loads restart command when configured", () => {

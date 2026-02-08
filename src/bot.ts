@@ -2,7 +2,6 @@ import { exec } from "node:child_process"
 import { promisify } from "node:util"
 
 import { Markup, Telegraf } from "telegraf"
-import { message } from "telegraf/filters"
 
 import type { BotConfig, RestartCommandConfig } from "./config.js"
 import type { OpencodeBridge, PermissionReply, PromptInput } from "./opencode.js"
@@ -24,6 +23,8 @@ import {
   OpencodeModelModalitiesError,
   ProjectAliasNotFoundError,
   ProjectConfigurationError,
+  TelegramFileDownloadError,
+  TelegramFileDownloadTimeoutError,
 } from "./errors.js"
 import {
   buildPermissionKeyboardSpec,
@@ -231,7 +232,7 @@ export const startBot = (
       reply: (text: string) => Promise<unknown>
     },
     userLabel: string,
-    input: PromptInput,
+    input: PromptInput | (() => Promise<PromptInput>),
   ) => {
     const chatId = ctx.chat?.id
     const replyToMessageId = ctx.message?.message_id
@@ -305,6 +306,13 @@ export const startBot = (
 
     void (async () => {
       try {
+        const resolvedInput =
+          typeof input === "function" ? await input() : input
+
+        if (abortController.signal.aborted) {
+          return
+        }
+
         const sessionId = await opencode.ensureSessionId(chatId, project.path)
         promptGuard.setSessionId(chatId, abortController, sessionId)
 
@@ -317,7 +325,7 @@ export const startBot = (
           : { signal: abortController.signal, sessionId }
         const result = await opencode.promptFromChat(
           chatId,
-          input,
+          resolvedInput,
           project.path,
           promptOptions,
         )
@@ -334,20 +342,43 @@ export const startBot = (
 
         console.error("Failed to send prompt to OpenCode", error)
         if (!timedOut) {
-        const isModelCapabilityError =
-          error instanceof OpencodeModelCapabilityError ||
-          error instanceof OpencodeModelModalitiesError
-        const hasMatchingMessage =
-          error instanceof Error &&
-          (error.message.includes("does not support image input") ||
-            error.message.includes("does not support PDF input") ||
-            error.message.includes("does not expose modalities"))
-        const message =
-          isModelCapabilityError || hasMatchingMessage
-            ? (error as Error).message
-            : "OpenCode error. Check server logs."
-        await sendReply(chatId, replyToMessageId, message)
-      }
+          if (error instanceof TelegramImageTooLargeError) {
+            await sendReply(chatId, replyToMessageId, error.message)
+            return
+          }
+
+          if (error instanceof TelegramFileDownloadTimeoutError) {
+            await sendReply(
+              chatId,
+              replyToMessageId,
+              "Failed to download file from Telegram (timed out).",
+            )
+            return
+          }
+
+          if (error instanceof TelegramFileDownloadError) {
+            await sendReply(
+              chatId,
+              replyToMessageId,
+              `Failed to download file from Telegram. ${error.message}`,
+            )
+            return
+          }
+
+          const isModelCapabilityError =
+            error instanceof OpencodeModelCapabilityError ||
+            error instanceof OpencodeModelModalitiesError
+          const hasMatchingMessage =
+            error instanceof Error &&
+            (error.message.includes("does not support image input") ||
+              error.message.includes("does not support PDF input") ||
+              error.message.includes("does not expose modalities"))
+          const message =
+            isModelCapabilityError || hasMatchingMessage
+              ? (error as Error).message
+              : "OpenCode error. Check server logs."
+          await sendReply(chatId, replyToMessageId, message)
+        }
       } finally {
         promptGuard.finish(chatId)
       }
@@ -777,9 +808,9 @@ export const startBot = (
     runPrompt(ctx, userLabel, { text })
   })
 
-  bot.on(message("photo"), async (ctx) => {
+  bot.on("photo", (ctx) => {
     if (!isAuthorized(ctx.from, config.allowedUserId)) {
-      await ctx.reply("Not authorized.")
+      void ctx.reply("Not authorized.")
       return
     }
 
@@ -792,18 +823,20 @@ export const startBot = (
     }
 
     const userLabel = formatUserLabel(ctx.from)
+    const telegram = ctx.telegram
     const photos = ctx.message.photo
     const caption = ctx.message.caption ?? ""
     const largest = pickLargestPhoto(photos)
 
-    try {
+    runPrompt(ctx, userLabel, async () => {
       const attachment = await downloadTelegramImageAsAttachment(
-        ctx.telegram,
+        telegram,
         largest.file_id,
         {
           mime: "image/jpeg",
           filename: "photo.jpg",
           maxBytes: DEFAULT_MAX_IMAGE_BYTES,
+          timeoutMs: config.telegramDownloadTimeoutMs ?? 30_000,
           ...(largest.file_size != null ? { declaredSize: largest.file_size } : {}),
         },
       )
@@ -812,7 +845,7 @@ export const startBot = (
         ? caption
         : "Please analyze the attached image."
 
-      runPrompt(ctx, userLabel, {
+      return {
         text,
         files: [
           {
@@ -821,20 +854,13 @@ export const startBot = (
             dataUrl: attachment.dataUrl,
           },
         ],
-      })
-    } catch (error) {
-      console.error("Failed to handle Telegram photo", error)
-      const message =
-        error instanceof TelegramImageTooLargeError
-          ? error.message
-          : "Failed to process image."
-      await ctx.reply(message)
-    }
+      }
+    })
   })
 
-  bot.on(message("document"), async (ctx) => {
+  bot.on("document", (ctx) => {
     if (!isAuthorized(ctx.from, config.allowedUserId)) {
-      await ctx.reply("Not authorized.")
+      void ctx.reply("Not authorized.")
       return
     }
 
@@ -847,22 +873,25 @@ export const startBot = (
     }
 
     const userLabel = formatUserLabel(ctx.from)
+    const telegram = ctx.telegram
     const document = ctx.message.document
-    const isImage = isImageDocument(document)
-    const isPdf = isPdfDocument(document)
-    if (!isImage && !isPdf) {
-      await ctx.reply("Unsupported document type. Please send an image or PDF.")
-      return
-    }
-
     const caption = ctx.message.caption ?? ""
     const mime = document.mime_type ?? "application/octet-stream"
     const filename = document.file_name
-    try {
-      const attachment = await downloadTelegramFileAsAttachment(ctx.telegram, document.file_id, {
+
+    const isImage = isImageDocument(document)
+    const isPdf = isPdfDocument(document)
+    if (!isImage && !isPdf) {
+      void ctx.reply("Unsupported document type. Please send an image or PDF.")
+      return
+    }
+
+    runPrompt(ctx, userLabel, async () => {
+      const attachment = await downloadTelegramFileAsAttachment(telegram, document.file_id, {
         mime,
         ...(filename ? { filename } : {}),
         maxBytes: DEFAULT_MAX_IMAGE_BYTES,
+        timeoutMs: config.telegramDownloadTimeoutMs ?? 30_000,
         ...(document.file_size != null ? { declaredSize: document.file_size } : {}),
       })
 
@@ -872,7 +901,7 @@ export const startBot = (
           ? "Please analyze the attached PDF."
           : "Please analyze the attached image."
 
-      runPrompt(ctx, userLabel, {
+      return {
         text,
         files: [
           {
@@ -881,15 +910,8 @@ export const startBot = (
             dataUrl: attachment.dataUrl,
           },
         ],
-      })
-    } catch (error) {
-      console.error("Failed to handle Telegram document", error)
-      const message =
-        error instanceof TelegramImageTooLargeError
-          ? error.message
-          : "Failed to process image."
-      await ctx.reply(message)
-    }
+      }
+    })
   })
 
   bot.catch((error, ctx) => {

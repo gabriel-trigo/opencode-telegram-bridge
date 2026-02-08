@@ -1,6 +1,7 @@
 import {
   BridgeError,
   TelegramFileDownloadError,
+  TelegramFileDownloadTimeoutError,
   TelegramPhotoSelectionError,
 } from "./errors.js"
 
@@ -109,6 +110,7 @@ export const downloadTelegramFileAsAttachment = async (
     filename?: string
     maxBytes?: number
     declaredSize?: number
+    timeoutMs?: number
   },
 ): Promise<FileAttachment> => {
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_FILE_BYTES
@@ -118,7 +120,30 @@ export const downloadTelegramFileAsAttachment = async (
   }
 
   const url = await telegram.getFileLink(fileId)
-  const response = await fetch(url)
+
+  const timeoutMs = options.timeoutMs
+  const abortController = timeoutMs != null ? new AbortController() : null
+  const timeoutId =
+    abortController && timeoutMs != null
+      ? setTimeout(() => abortController.abort(), timeoutMs)
+      : null
+
+  let response: Response
+  try {
+    response = await fetch(url, abortController ? { signal: abortController.signal } : undefined)
+  } catch (error) {
+    if (abortController?.signal.aborted) {
+      throw new TelegramFileDownloadTimeoutError(
+        `Telegram file download timed out after ${timeoutMs}ms`,
+      )
+    }
+
+    throw error
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+    }
+  }
   if (!response.ok) {
     throw new TelegramFileDownloadError(
       `Failed to download Telegram file (status ${response.status})`,
@@ -147,6 +172,7 @@ export const downloadTelegramImageAsAttachment = async (
     filename?: string
     maxBytes?: number
     declaredSize?: number
+    timeoutMs?: number
   },
 ): Promise<FileAttachment> => downloadTelegramFileAsAttachment(telegram, fileId, options)
 

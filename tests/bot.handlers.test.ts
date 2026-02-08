@@ -42,6 +42,7 @@ vi.mock("telegraf", () => {
       sendMessage: vi.fn(async () => ({ message_id: 123 })),
       editMessageText: vi.fn(async () => undefined),
       setMyCommands: vi.fn(async () => undefined),
+      getFileLink: vi.fn(async (_fileId: string) => new URL("https://example.com/file")),
     }
 
     private startHandler: ((ctx: any) => any) | null = null
@@ -132,6 +133,64 @@ const createCallbackCtx = (options: {
     chat: { id: options.chatId },
     callbackQuery: { data: options.data },
     answerCbQuery: vi.fn(async () => undefined),
+  }
+}
+
+const createPhotoCtx = (options: {
+  userId: number
+  chatId: number
+  messageId?: number
+  caption?: string
+  fileId?: string
+  fileSize?: number
+}) => {
+  const messageId = options.messageId ?? 100
+  return {
+    from: { id: options.userId, username: "user" },
+    chat: { id: options.chatId },
+    message: {
+      message_id: messageId,
+      caption: options.caption,
+      photo: [
+        {
+          file_id: options.fileId ?? "file-1",
+          width: 100,
+          height: 100,
+          ...(options.fileSize != null ? { file_size: options.fileSize } : {}),
+        },
+      ],
+    },
+    reply: vi.fn(async () => undefined),
+    telegram: (globalThis as any).__telegrafMockState.lastBot?.telegram,
+  }
+}
+
+const createDocumentCtx = (options: {
+  userId: number
+  chatId: number
+  messageId?: number
+  caption?: string
+  fileId?: string
+  fileName?: string
+  mimeType?: string
+  fileSize?: number
+}) => {
+  const messageId = options.messageId ?? 100
+  return {
+    from: { id: options.userId, username: "user" },
+    chat: { id: options.chatId },
+    message: {
+      message_id: messageId,
+      caption: options.caption,
+      document: {
+        file_id: options.fileId ?? "file-1",
+        file_name: options.fileName,
+        mime_type: options.mimeType,
+        ...(options.fileSize != null ? { file_size: options.fileSize } : {}),
+      },
+    },
+    reply: vi.fn(async () => undefined),
+    telegram: (globalThis as any).__telegrafMockState.lastBot?.telegram,
   }
 }
 
@@ -1508,6 +1567,170 @@ describe("bot handler behavior", () => {
 
     expect(opencode.promptFromChat).not.toHaveBeenCalled()
     expect(state.lastBot!.telegram.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it("photo handler runs download in background and replies on download timeout", async () => {
+    vi.useFakeTimers()
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const fetchMock = vi.fn(async (_url: any, init?: any) => {
+      const signal = init?.signal as AbortSignal | undefined
+      return await new Promise((_resolve, reject) => {
+        signal?.addEventListener(
+          "abort",
+          () => {
+            const error = new Error("aborted") as Error & { name: string }
+            error.name = "AbortError"
+            reject(error)
+          },
+          { once: true },
+        )
+      })
+    })
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = fetchMock as any
+
+    try {
+      const { startBot } = await import("../src/bot.js")
+      startBot(
+        {
+          botToken: "token",
+          allowedUserId: 1,
+          opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+          handlerTimeoutMs: 9999,
+          promptTimeoutMs: 10_000,
+          telegramDownloadTimeoutMs: 30,
+        },
+        opencode as any,
+        projects as any,
+        chatProjects as any,
+        chatModels as any,
+      )
+
+      const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+      const bot = state.lastBot!
+
+      const ctx = createPhotoCtx({ userId: 1, chatId: 10, messageId: 99, caption: "" })
+      await bot.dispatchOn("photo", ctx)
+      await flushMicrotasks()
+
+      // Handler returned without awaiting the download.
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(30)
+      await flushMicrotasks()
+
+      expect(opencode.promptFromChat).not.toHaveBeenCalled()
+      expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+        10,
+        "Failed to download file from Telegram (timed out).",
+        expect.objectContaining({ reply_parameters: { message_id: 99 } }),
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+      vi.useRealTimers()
+    }
+  })
+
+  it("document handler replies on download failure and does not call OpenCode", async () => {
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      arrayBuffer: async () => Buffer.from([]),
+    }))
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = fetchMock as any
+
+    try {
+      const { startBot } = await import("../src/bot.js")
+      startBot(
+        {
+          botToken: "token",
+          allowedUserId: 1,
+          opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+          handlerTimeoutMs: 9999,
+          promptTimeoutMs: 10_000,
+          telegramDownloadTimeoutMs: 1000,
+        },
+        opencode as any,
+        projects as any,
+        chatProjects as any,
+        chatModels as any,
+      )
+
+      const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+      const bot = state.lastBot!
+
+      const ctx = createDocumentCtx({
+        userId: 1,
+        chatId: 10,
+        messageId: 50,
+        mimeType: "application/pdf",
+        fileName: "test.pdf",
+      })
+      await bot.dispatchOn("document", ctx)
+      await flushMicrotasks()
+
+      expect(opencode.promptFromChat).not.toHaveBeenCalled()
+      expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+        10,
+        expect.stringContaining("Failed to download file from Telegram."),
+        expect.objectContaining({ reply_parameters: { message_id: 50 } }),
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   it("text handler errors: missing chat / missing project / OpenCode failure", async () => {

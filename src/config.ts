@@ -6,6 +6,7 @@ export type BotConfig = {
   opencode: OpencodeConfig
   handlerTimeoutMs: number
   promptTimeoutMs: number
+  telegramDownloadTimeoutMs?: number
   opencodeRestart?: RestartCommandConfig
   bridgeRestart?: RestartCommandConfig
 }
@@ -83,6 +84,12 @@ export const loadConfig = (): BotConfig => {
       "TELEGRAM_HANDLER_TIMEOUT_MS",
     ) ?? promptTimeoutMs + 30_000
 
+  const telegramDownloadTimeoutMs =
+    parseDurationMs(
+      process.env.TELEGRAM_FILE_DOWNLOAD_TIMEOUT_MS,
+      "TELEGRAM_FILE_DOWNLOAD_TIMEOUT_MS",
+    ) ?? 30_000
+
   const restartCommand = process.env.OPENCODE_RESTART_COMMAND?.trim()
   const restartTimeoutMs = parseDurationMs(
     process.env.OPENCODE_RESTART_TIMEOUT_MS,
@@ -125,6 +132,7 @@ export const loadConfig = (): BotConfig => {
     opencode,
     handlerTimeoutMs,
     promptTimeoutMs,
+    telegramDownloadTimeoutMs,
   }
 
   let config = baseConfig
