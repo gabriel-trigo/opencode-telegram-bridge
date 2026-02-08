@@ -1733,6 +1733,85 @@ describe("bot handler behavior", () => {
     }
   })
 
+  it("document handler infers application/pdf when mime type is missing", async () => {
+    let receivedInput: any
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async (_chatId: number, input: any) => {
+        receivedInput = input
+        return { reply: "ok", model: null }
+      }),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => Buffer.from([0x25, 0x50, 0x44, 0x46]),
+    }))
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = fetchMock as any
+
+    try {
+      const { startBot } = await import("../src/bot.js")
+      startBot(
+        {
+          botToken: "token",
+          allowedUserId: 1,
+          opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+          handlerTimeoutMs: 9999,
+          promptTimeoutMs: 10_000,
+          telegramDownloadTimeoutMs: 1000,
+        },
+        opencode as any,
+        projects as any,
+        chatProjects as any,
+        chatModels as any,
+      )
+
+      const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+      const bot = state.lastBot!
+
+      const ctx = createDocumentCtx({
+        userId: 1,
+        chatId: 10,
+        messageId: 51,
+        mimeType: undefined,
+        fileName: "report.PDF",
+      })
+
+      await bot.dispatchOn("document", ctx)
+      await flushMicrotasks()
+      await flushMicrotasks()
+
+      expect(opencode.promptFromChat).toHaveBeenCalledTimes(1)
+      expect(receivedInput.files?.[0]?.mime).toBe("application/pdf")
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it("text handler errors: missing chat / missing project / OpenCode failure", async () => {
     const opencode = {
       ensureSessionId: vi.fn(async () => "session-1"),

@@ -886,9 +886,15 @@ export const startBot = (
       return
     }
 
+    // Telegram's `Document.mime_type` is optional and "as defined by the sender".
+    // In practice, PDFs sometimes arrive with `mime_type` missing even when the
+    // filename ends with `.pdf`. OpenCode relies on `mime=application/pdf` to
+    // treat the attachment as a PDF, so we infer it from the filename when needed.
+    const inferredMime = isPdf ? "application/pdf" : mime
+
     runPrompt(ctx, userLabel, async () => {
       const attachment = await downloadTelegramFileAsAttachment(telegram, document.file_id, {
-        mime,
+        mime: inferredMime,
         ...(filename ? { filename } : {}),
         maxBytes: DEFAULT_MAX_IMAGE_BYTES,
         timeoutMs: config.telegramDownloadTimeoutMs ?? 30_000,
