@@ -4,6 +4,7 @@ import type {
   GlobalEvent,
   Part,
   PermissionRequest,
+  QuestionRequest,
   Provider,
 } from "@opencode-ai/sdk/v2"
 
@@ -34,7 +35,13 @@ export type OpencodeBridge = {
     reply: PermissionReply,
     directory?: string,
   ) => Promise<boolean>
-  startPermissionEventStream: (handlers: PermissionEventHandlers) => {
+  replyToQuestion: (
+    requestId: string,
+    answers: QuestionAnswers,
+    directory?: string,
+  ) => Promise<boolean>
+  rejectQuestion: (requestId: string, directory?: string) => Promise<boolean>
+  startEventStream: (handlers: EventStreamHandlers) => {
     stop: () => void
   }
 }
@@ -86,6 +93,20 @@ export type PromptResult = {
 export type PermissionEventHandlers = {
   onPermissionAsked: (event: {
     request: PermissionRequest
+    directory: string
+  }) => void | Promise<void>
+  onError?: (error: unknown) => void
+}
+
+export type QuestionAnswers = Array<Array<string>>
+
+export type EventStreamHandlers = {
+  onPermissionAsked?: (event: {
+    request: PermissionRequest
+    directory: string
+  }) => void | Promise<void>
+  onQuestionAsked?: (event: {
+    request: QuestionRequest
     directory: string
   }) => void | Promise<void>
   onError?: (error: unknown) => void
@@ -377,7 +398,19 @@ export const createOpencodeBridge = (
       const responseResult = await client.permission.reply(parameters)
       return requireData(responseResult, "permission.reply")
     },
-    startPermissionEventStream({ onPermissionAsked, onError }) {
+    async replyToQuestion(requestId, answers, directory) {
+      const parameters = directory
+        ? { requestID: requestId, answers, directory }
+        : { requestID: requestId, answers }
+      const responseResult = await client.question.reply(parameters)
+      return requireData(responseResult, "question.reply")
+    },
+    async rejectQuestion(requestId, directory) {
+      const parameters = directory ? { requestID: requestId, directory } : { requestID: requestId }
+      const responseResult = await client.question.reject(parameters)
+      return requireData(responseResult, "question.reject")
+    },
+    startEventStream({ onPermissionAsked, onQuestionAsked, onError }) {
       const abortController = new AbortController()
 
       const run = async () => {
@@ -392,20 +425,32 @@ export const createOpencodeBridge = (
               }
 
               const payload = (event as GlobalEvent).payload
-              if (payload?.type !== "permission.asked") {
+              if (payload?.type === "permission.asked") {
+                const permissionEvent = payload as {
+                  type: "permission.asked"
+                  properties: PermissionRequest
+                }
+                await Promise.resolve(
+                  onPermissionAsked?.({
+                    request: permissionEvent.properties,
+                    directory: (event as GlobalEvent).directory,
+                  }),
+                )
                 continue
               }
 
-              const permissionEvent = payload as {
-                type: "permission.asked"
-                properties: PermissionRequest
+              if (payload?.type === "question.asked") {
+                const questionEvent = payload as {
+                  type: "question.asked"
+                  properties: QuestionRequest
+                }
+                await Promise.resolve(
+                  onQuestionAsked?.({
+                    request: questionEvent.properties,
+                    directory: (event as GlobalEvent).directory,
+                  }),
+                )
               }
-              await Promise.resolve(
-                onPermissionAsked({
-                  request: permissionEvent.properties,
-                  directory: (event as GlobalEvent).directory,
-                }),
-              )
             }
           } catch (error) {
             if (abortController.signal.aborted) {

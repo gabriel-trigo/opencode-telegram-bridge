@@ -17,15 +17,15 @@ Run a Telegram bot that forwards Telegram messages to an OpenCode backend and re
 ## Runtime behavior
 - Telegraf long-polling fetches updates in batches and runs handlers concurrently for each batch.
 - Prompt handling runs out-of-band so the Telegraf handler can return immediately.
-- The bot enforces one in-flight prompt per chat. Extra messages in the same chat receive a "previous message" reply.
+- The bot enforces one in-flight prompt per chat. Extra messages in the same chat receive a "previous message" reply (unless OpenCode is waiting on a `question` tool answer).
 - Telegraf handler timeouts only log errors. Prompt timeouts are enforced by the bot and abort the HTTP request.
-- OpenCode permission requests are surfaced via the event stream and answered with Telegram inline buttons.
+- OpenCode permission + question requests are surfaced via the event stream and answered in Telegram.
 
 ## Prompt flow mental model
 - The Telegraf handler validates the message, acquires a per-chat lock, and returns immediately.
 - A background task sends the prompt to OpenCode and later replies via `bot.telegram.sendMessage` with `reply_parameters`.
 - If a prompt exceeds the bot timeout, the request is aborted, the lock is released, and a timeout reply is sent.
-- If a prompt is already in flight for a chat, new messages are ignored with a "previous message" reply.
+- If a prompt is already in flight for a chat, new messages are ignored with a "previous message" reply (unless OpenCode is waiting on a `question` tool answer).
 - Session reuse is keyed by `chat_id + project_dir`, and the session id mapping is persisted in SQLite.
 - The per-chat lock is released either when the background prompt completes (in a `finally` block) or when the prompt timeout fires.
 
@@ -33,6 +33,7 @@ Run a Telegram bot that forwards Telegram messages to an OpenCode backend and re
 - A single global OpenCode event stream is opened on startup and shared across all sessions.
 - Events include `sessionID` and `directory`, which are mapped back to the owning chat.
 - Permission requests are sent to Telegram with inline buttons, and callback replies are forwarded to OpenCode.
+- Question requests (`question` tool) are sent to Telegram with numbered option buttons; if the user types a message instead, it is treated as the question answer.
 
 ## Bot commands
 - `/start` - confirm the bot is online.

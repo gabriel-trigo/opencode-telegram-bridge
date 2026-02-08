@@ -22,6 +22,21 @@ export type PermissionCallback = {
   reply: "once" | "always" | "reject"
 }
 
+export type QuestionCallback =
+  | {
+      requestId: string
+      action: "option"
+      optionIndex: number
+    }
+  | {
+      requestId: string
+      action: "next"
+    }
+  | {
+      requestId: string
+      action: "cancel"
+    }
+
 export type ModelProvider = {
   id: string
   models: Record<string, { name?: string } | undefined>
@@ -195,6 +210,46 @@ export const parsePermissionCallback = (data: string): PermissionCallback | null
   }
 
   return { requestId, reply }
+}
+
+export const parseQuestionCallback = (data: string): QuestionCallback | null => {
+  if (!data.startsWith("q:")) {
+    return null
+  }
+
+  const parts = data.split(":")
+  if (parts.length < 3) {
+    return null
+  }
+
+  const [, requestId, action] = parts
+  if (!requestId || !action) {
+    return null
+  }
+
+  if (action === "next") {
+    return { requestId, action: "next" }
+  }
+
+  if (action === "cancel") {
+    return { requestId, action: "cancel" }
+  }
+
+  if (action === "opt") {
+    if (parts.length !== 4) {
+      return null
+    }
+
+    const optionIndexRaw = parts[3]
+    const optionIndex = Number(optionIndexRaw)
+    if (!Number.isInteger(optionIndex) || optionIndex < 0) {
+      return null
+    }
+
+    return { requestId, action: "option", optionIndex }
+  }
+
+  return null
 }
 
 export const formatPermissionDecision = (reply: PermissionCallback["reply"]) =>

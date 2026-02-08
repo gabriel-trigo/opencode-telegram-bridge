@@ -1,6 +1,8 @@
 import { exec } from "node:child_process"
 import { promisify } from "node:util"
 
+import type { QuestionRequest } from "@opencode-ai/sdk/v2"
+
 import { Markup, Telegraf } from "telegraf"
 
 import type { BotConfig, RestartCommandConfig } from "./config.js"
@@ -38,6 +40,7 @@ import {
   isCommandMessage,
   parseModelCommand,
   parsePermissionCallback,
+  parseQuestionCallback,
   parseProjectCommand,
   type ModelProvider,
   type PermissionKeyboardSpec,
@@ -48,6 +51,15 @@ type PendingPermission = {
   messageId: number
   directory: string
   summary: string
+}
+
+type PendingQuestion = {
+  chatId: number
+  messageId: number
+  directory: string
+  request: QuestionRequest
+  currentIndex: number
+  answers: Array<Array<string> | null>
 }
 
 type RestartResult =
@@ -78,6 +90,33 @@ export const startBot = (
   const bot = new Telegraf(config.botToken, {
     handlerTimeout: config.handlerTimeoutMs,
   })
+
+  const serializeError = (error: unknown) => {
+    if (error instanceof Error) {
+      return {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      }
+    }
+
+    return { message: String(error) }
+  }
+
+  const logEvent = (
+    level: "log" | "warn" | "error",
+    event: string,
+    context: Record<string, unknown> = {},
+  ) => {
+    const payload = {
+      ts: new Date().toISOString(),
+      event,
+      ...context,
+    }
+
+    // One JSON object per line makes post-mortem analysis easier.
+    console[level](JSON.stringify(payload))
+  }
   /*
    * Telegraf wraps each update handler in a timeout. When that timeout fires,
    * it logs an error but does not cancel the async handler. To avoid dangling
@@ -86,6 +125,8 @@ export const startBot = (
    */
   const promptGuard = createPromptGuard(config.promptTimeoutMs)
   const pendingPermissions = new Map<string, PendingPermission>()
+  const pendingQuestions = new Map<string, PendingQuestion>()
+  const pendingQuestionsByChat = new Map<number, string>()
 
   const sendReply = async (
     chatId: number,
@@ -104,6 +145,262 @@ export const startBot = (
     } catch (error) {
       console.error("Failed to send Telegram reply", error)
     }
+  }
+
+  const getPendingQuestionForChat = (chatId: number): PendingQuestion | null => {
+    const requestId = pendingQuestionsByChat.get(chatId)
+    if (!requestId) {
+      return null
+    }
+
+    return pendingQuestions.get(requestId) ?? null
+  }
+
+  const truncate = (value: string, maxLength: number) => {
+    if (value.length <= maxLength) {
+      return value
+    }
+
+    return `${value.slice(0, maxLength)}...`
+  }
+
+  const buildQuestionPromptText = (pending: PendingQuestion) => {
+    const { request, currentIndex, answers } = pending
+    const questions = request.questions
+    const question = questions[currentIndex]
+    if (!question) {
+      return "OpenCode asked a question, but the question payload was missing."
+    }
+
+    const header = (question.header ?? "").trim()
+    const prompt = (question.question ?? "").trim()
+    const isMultiple = Boolean(question.multiple)
+    const customDisabled = question.custom === false
+
+    const lines: string[] = [
+      `OpenCode question (${currentIndex + 1}/${questions.length})`,
+      ...(header ? [header] : []),
+      ...(prompt ? [prompt] : []),
+    ]
+
+    const selected = new Set(
+      Array.isArray(answers[currentIndex]) ? (answers[currentIndex] as Array<string>) : [],
+    )
+
+    const options = question.options ?? []
+    if (options.length > 0) {
+      lines.push("", "Options:")
+      options.forEach((option, index) => {
+        const label = truncate(String(option.label ?? "").trim(), 120)
+        const description = truncate(String(option.description ?? "").trim(), 240)
+
+        const prefix = isMultiple ? (selected.has(option.label) ? "[x]" : "[ ]") : ""
+        const prefixWithSpace = prefix ? `${prefix} ` : ""
+        const suffix = description ? ` - ${description}` : ""
+        lines.push(`${prefixWithSpace}${index + 1}) ${label}${suffix}`)
+      })
+    }
+
+    if (isMultiple) {
+      lines.push(
+        "",
+        "This question allows selecting multiple options. Tap options to toggle, then press Next.",
+      )
+    }
+
+    if (customDisabled) {
+      lines.push("", "Custom answers are disabled for this question.")
+    }
+
+    lines.push(
+      "",
+      "If you don't choose any of the options, your next message will be treated as the answer to the question.",
+    )
+
+    // Keep some headroom under Telegram's 4096 character limit.
+    return truncate(lines.join("\n"), 3800)
+  }
+
+  type InlineButton = { text: string; data: string }
+
+  const chunk = <T>(items: T[], size: number): T[][] => {
+    if (size <= 0) {
+      return [items]
+    }
+
+    const rows: T[][] = []
+    for (let index = 0; index < items.length; index += size) {
+      rows.push(items.slice(index, index + size))
+    }
+    return rows
+  }
+
+  const buildQuestionKeyboardRows = (pending: PendingQuestion): InlineButton[][] => {
+    const requestId = pending.request.id
+    const question = pending.request.questions[pending.currentIndex]
+    if (!question) {
+      return [[{ text: "Cancel", data: `q:${requestId}:cancel` }]]
+    }
+
+    const optionButtons = (question.options ?? []).map((_, index) => ({
+      text: String(index + 1),
+      data: `q:${requestId}:opt:${index}`,
+    }))
+    const optionRows = chunk(optionButtons, 5)
+
+    const isMultiple = Boolean(question.multiple)
+    const isLastQuestion = pending.currentIndex >= pending.request.questions.length - 1
+    const navigationRow: InlineButton[] = []
+
+    if (isMultiple) {
+      navigationRow.push({
+        text: isLastQuestion ? "Submit" : "Next",
+        data: `q:${requestId}:next`,
+      })
+    }
+
+    navigationRow.push({ text: "Cancel", data: `q:${requestId}:cancel` })
+
+    return optionRows.length > 0 ? [...optionRows, navigationRow] : [navigationRow]
+  }
+
+  const toTelegrafInlineKeyboardRows = (rows: InlineButton[][]) => {
+    const telegrafRows = rows.map((row) =>
+      row.map((button) => Markup.button.callback(button.text, button.data)),
+    )
+    return Markup.inlineKeyboard(telegrafRows)
+  }
+
+  const updateQuestionMessage = async (pending: PendingQuestion) => {
+    const text = buildQuestionPromptText(pending)
+    const replyMarkup = toTelegrafInlineKeyboardRows(buildQuestionKeyboardRows(pending))
+    await bot.telegram.editMessageText(pending.chatId, pending.messageId, undefined, text, {
+      reply_markup: replyMarkup.reply_markup,
+    })
+  }
+
+  const clearPendingQuestion = async (
+    chatId: number,
+    options?: { reason?: string; reject?: boolean },
+  ) => {
+    const pending = getPendingQuestionForChat(chatId)
+    if (!pending) {
+      return
+    }
+
+    pendingQuestions.delete(pending.request.id)
+    pendingQuestionsByChat.delete(chatId)
+
+    if (options?.reject) {
+      try {
+        await opencode.rejectQuestion(pending.request.id, pending.directory)
+      } catch (error) {
+        console.error("Failed to reject question", error)
+      }
+    }
+
+    if (options?.reason) {
+      try {
+        await bot.telegram.editMessageText(
+          pending.chatId,
+          pending.messageId,
+          undefined,
+          `${buildQuestionPromptText(pending)}\n\nStatus: ${options.reason}`,
+        )
+      } catch (error) {
+        console.error("Failed to update question status message", error)
+      }
+    }
+  }
+
+  const deletePendingQuestion = (pending: PendingQuestion) => {
+    pendingQuestions.delete(pending.request.id)
+    const current = pendingQuestionsByChat.get(pending.chatId)
+    if (current === pending.request.id) {
+      pendingQuestionsByChat.delete(pending.chatId)
+    }
+  }
+
+  const collectQuestionAnswers = (pending: PendingQuestion): Array<Array<string>> | null => {
+    const collected: Array<Array<string>> = []
+    for (const answer of pending.answers) {
+      if (!answer || answer.length === 0) {
+        return null
+      }
+      collected.push(answer)
+    }
+    return collected
+  }
+
+  const advanceQuestionOrSubmit = async (pending: PendingQuestion) => {
+    const isLast = pending.currentIndex >= pending.request.questions.length - 1
+    if (!isLast) {
+      pending.currentIndex += 1
+      await updateQuestionMessage(pending)
+      return
+    }
+
+    const answers = collectQuestionAnswers(pending)
+    if (!answers) {
+      throw new Error("Missing answers for one or more questions")
+    }
+
+    await opencode.replyToQuestion(pending.request.id, answers, pending.directory)
+    deletePendingQuestion(pending)
+
+    try {
+      await bot.telegram.editMessageText(
+        pending.chatId,
+        pending.messageId,
+        undefined,
+        `${buildQuestionPromptText(pending)}\n\nStatus: Answer sent to OpenCode. Waiting for response...`,
+      )
+    } catch (error) {
+      console.error("Failed to update question completion message", error)
+    }
+  }
+
+  const handleQuestionTextAnswer = async (
+    chatId: number,
+    replyToMessageId: number | undefined,
+    text: string,
+  ): Promise<boolean> => {
+    const pending = getPendingQuestionForChat(chatId)
+    if (!pending) {
+      return false
+    }
+
+    const question = pending.request.questions[pending.currentIndex]
+    if (!question) {
+      await sendReply(chatId, replyToMessageId, "Question not available.")
+      deletePendingQuestion(pending)
+      return true
+    }
+
+    if (question.custom === false) {
+      await sendReply(
+        chatId,
+        replyToMessageId,
+        "Please choose one of the options for this question.",
+      )
+      return true
+    }
+
+    const trimmed = text.trim()
+    if (!trimmed) {
+      await sendReply(chatId, replyToMessageId, "Answer cannot be empty.")
+      return true
+    }
+
+    pending.answers[pending.currentIndex] = [trimmed]
+    try {
+      await advanceQuestionOrSubmit(pending)
+    } catch (error) {
+      console.error("Failed to reply to question", error)
+      await sendReply(chatId, replyToMessageId, "Failed to send answer to OpenCode.")
+    }
+
+    return true
   }
 
   const buildBotCommands = () => {
@@ -174,7 +471,7 @@ export const startBot = (
     }
   }
 
-  opencode.startPermissionEventStream({
+  opencode.startEventStream({
     onPermissionAsked: async ({ request, directory }) => {
       const owner = opencode.getSessionOwner(request.sessionID)
       if (!owner) {
@@ -203,7 +500,53 @@ export const startBot = (
         console.error("Failed to send permission request", error)
       }
     },
-    onError: (error) => {
+    onQuestionAsked: async ({ request, directory }) => {
+      const owner = opencode.getSessionOwner(request.sessionID)
+      if (!owner) {
+        console.warn("Question request for unknown session", {
+          sessionId: request.sessionID,
+          requestId: request.id,
+        })
+        return
+      }
+
+      const existing = getPendingQuestionForChat(owner.chatId)
+      if (existing) {
+        console.warn("Question request while another question is pending", {
+          chatId: owner.chatId,
+          requestId: request.id,
+          existingRequestId: existing.request.id,
+        })
+        try {
+          await opencode.rejectQuestion(request.id, directory)
+        } catch (error) {
+          console.error("Failed to reject unexpected question", error)
+        }
+        return
+      }
+
+      const pending: PendingQuestion = {
+        chatId: owner.chatId,
+        messageId: 0,
+        directory,
+        request,
+        currentIndex: 0,
+        answers: Array.from({ length: request.questions.length }, () => null),
+      }
+
+      try {
+        const replyMarkup = toTelegrafInlineKeyboardRows(buildQuestionKeyboardRows(pending))
+        const message = await bot.telegram.sendMessage(owner.chatId, buildQuestionPromptText(pending), {
+          reply_markup: replyMarkup.reply_markup,
+        })
+        pending.messageId = message.message_id
+        pendingQuestions.set(request.id, pending)
+        pendingQuestionsByChat.set(owner.chatId, request.id)
+      } catch (error) {
+        console.error("Failed to send question request", error)
+      }
+    },
+    onError: (error: unknown) => {
       console.error("OpenCode event stream error", error)
     },
   })
@@ -242,14 +585,31 @@ export const startBot = (
       return
     }
 
+    const startedAt = Date.now()
+
     let project
     try {
       project = getProjectForChat(chatId)
     } catch (error) {
-      console.error("Missing project for chat", { chatId, error })
+      logEvent("error", "prompt.project_missing", {
+        chatId,
+        replyToMessageId,
+        userLabel,
+        error: serializeError(error),
+      })
       void ctx.reply("Missing project configuration.")
       return
     }
+
+    logEvent("log", "prompt.start", {
+      chatId,
+      replyToMessageId,
+      userLabel,
+      projectAlias: project.alias,
+      projectDir: project.path,
+      promptTimeoutMs: config.promptTimeoutMs,
+      hasPendingQuestion: Boolean(getPendingQuestionForChat(chatId)),
+    })
 
     let timedOut = false
     const abortController = promptGuard.tryStart(
@@ -258,7 +618,26 @@ export const startBot = (
       ({ replyToMessageId: timeoutReplyToMessageId, sessionId }) => {
         timedOut = true
         void (async () => {
+          const elapsedMs = Date.now() - startedAt
+          logEvent("warn", "prompt.timeout", {
+            chatId,
+            replyToMessageId: timeoutReplyToMessageId,
+            sessionId,
+            projectAlias: project.alias,
+            projectDir: project.path,
+            elapsedMs,
+            promptTimeoutMs: config.promptTimeoutMs,
+          })
+
+          await clearPendingQuestion(chatId, { reason: "Timed out", reject: true })
+
           if (!sessionId) {
+            logEvent("warn", "prompt.timeout.session_not_ready", {
+              chatId,
+              replyToMessageId: timeoutReplyToMessageId,
+              projectDir: project.path,
+              elapsedMs,
+            })
             await sendReply(
               chatId,
               timeoutReplyToMessageId,
@@ -268,7 +647,20 @@ export const startBot = (
           }
 
           try {
+            logEvent("log", "prompt.timeout.abort_attempt", {
+              chatId,
+              replyToMessageId: timeoutReplyToMessageId,
+              sessionId,
+              projectDir: project.path,
+            })
             const aborted = await opencode.abortSession(sessionId, project.path)
+            logEvent("log", "prompt.timeout.abort_result", {
+              chatId,
+              replyToMessageId: timeoutReplyToMessageId,
+              sessionId,
+              projectDir: project.path,
+              aborted,
+            })
             if (aborted) {
               await sendReply(
                 chatId,
@@ -284,7 +676,13 @@ export const startBot = (
               "OpenCode request timed out. Tried to abort the server-side prompt, but it was not aborted. You can send a new message.",
             )
           } catch (error) {
-            console.error("Failed to abort OpenCode session after timeout", error)
+            logEvent("error", "prompt.timeout.abort_error", {
+              chatId,
+              replyToMessageId: timeoutReplyToMessageId,
+              sessionId,
+              projectDir: project.path,
+              error: serializeError(error),
+            })
             await sendReply(
               chatId,
               timeoutReplyToMessageId,
@@ -296,6 +694,13 @@ export const startBot = (
     )
 
     if (!abortController) {
+      logEvent("warn", "prompt.blocked_in_flight", {
+        chatId,
+        replyToMessageId,
+        userLabel,
+        projectAlias: project.alias,
+        projectDir: project.path,
+      })
       void sendReply(
         chatId,
         replyToMessageId,
@@ -309,26 +714,71 @@ export const startBot = (
         const resolvedInput =
           typeof input === "function" ? await input() : input
 
+        logEvent("log", "prompt.input", {
+          chatId,
+          replyToMessageId,
+          projectDir: project.path,
+          textLength: resolvedInput.text.length,
+          fileCount: resolvedInput.files?.length ?? 0,
+          fileMimes: resolvedInput.files?.map((file) => file.mime) ?? [],
+        })
+
         if (abortController.signal.aborted) {
+          logEvent("warn", "prompt.aborted_before_session", {
+            chatId,
+            replyToMessageId,
+            projectDir: project.path,
+          })
           return
         }
 
         const sessionId = await opencode.ensureSessionId(chatId, project.path)
         promptGuard.setSessionId(chatId, abortController, sessionId)
 
+        logEvent("log", "prompt.session_ready", {
+          chatId,
+          replyToMessageId,
+          sessionId,
+          projectDir: project.path,
+        })
+
         if (abortController.signal.aborted) {
+          logEvent("warn", "prompt.aborted_after_session", {
+            chatId,
+            replyToMessageId,
+            sessionId,
+            projectDir: project.path,
+          })
           return
         }
         const storedModel = chatModels.getModel(chatId, project.path)
         const promptOptions = storedModel
           ? { signal: abortController.signal, model: storedModel, sessionId }
           : { signal: abortController.signal, sessionId }
+
+        logEvent("log", "prompt.send", {
+          chatId,
+          replyToMessageId,
+          sessionId,
+          projectDir: project.path,
+          model: storedModel ?? null,
+        })
         const result = await opencode.promptFromChat(
           chatId,
           resolvedInput,
           project.path,
           promptOptions,
         )
+
+        logEvent("log", "prompt.success", {
+          chatId,
+          replyToMessageId,
+          sessionId,
+          projectDir: project.path,
+          elapsedMs: Date.now() - startedAt,
+          replyLength: result.reply.length,
+          returnedModel: result.model,
+        })
         if (!storedModel && result.model) {
           chatModels.setModel(chatId, project.path, result.model)
         }
@@ -337,10 +787,23 @@ export const startBot = (
         }
       } catch (error) {
         if (abortController.signal.aborted) {
+          logEvent("warn", "prompt.aborted", {
+            chatId,
+            replyToMessageId,
+            projectDir: project.path,
+            elapsedMs: Date.now() - startedAt,
+            error: serializeError(error),
+          })
           return
         }
 
-        console.error("Failed to send prompt to OpenCode", error)
+        logEvent("error", "prompt.error", {
+          chatId,
+          replyToMessageId,
+          projectDir: project.path,
+          elapsedMs: Date.now() - startedAt,
+          error: serializeError(error),
+        })
         if (!timedOut) {
           if (error instanceof TelegramImageTooLargeError) {
             await sendReply(chatId, replyToMessageId, error.message)
@@ -381,6 +844,15 @@ export const startBot = (
         }
       } finally {
         promptGuard.finish(chatId)
+
+        logEvent("log", "prompt.finish", {
+          chatId,
+          replyToMessageId,
+          projectDir: project.path,
+          elapsedMs: Date.now() - startedAt,
+          timedOut,
+          aborted: abortController.signal.aborted,
+        })
       }
     })()
   }
@@ -644,6 +1116,8 @@ export const startBot = (
       return
     }
 
+    await clearPendingQuestion(chatId, { reason: "Aborted", reject: true })
+
     const aborted = promptGuard.abort(chatId)
     if (!aborted) {
       await ctx.reply("No in-flight prompt to abort.")
@@ -750,8 +1224,10 @@ export const startBot = (
     }
 
     const data = callbackQuery.data
-    const parsed = parsePermissionCallback(data)
-    if (!parsed) {
+
+    const permissionParsed = parsePermissionCallback(data)
+    const questionParsed = permissionParsed ? null : parseQuestionCallback(data)
+    if (!permissionParsed && !questionParsed) {
       return
     }
 
@@ -760,37 +1236,160 @@ export const startBot = (
       return
     }
 
-    const requestId = parsed.requestId
-    const permissionReply = parsed.reply as PermissionReply
+    if (permissionParsed) {
+      const requestId = permissionParsed.requestId
+      const permissionReply = permissionParsed.reply as PermissionReply
 
-    const pending = pendingPermissions.get(requestId)
-    if (!pending) {
-      await ctx.answerCbQuery("Permission request not found.")
+      const pending = pendingPermissions.get(requestId)
+      if (!pending) {
+        await ctx.answerCbQuery("Permission request not found.")
+        return
+      }
+
+      try {
+        await opencode.replyToPermission(
+          requestId,
+          permissionReply,
+          pending.directory,
+        )
+        pendingPermissions.delete(requestId)
+        const decisionLabel = formatPermissionDecision(permissionReply)
+        await bot.telegram.editMessageText(
+          pending.chatId,
+          pending.messageId,
+          undefined,
+          `${pending.summary}\nDecision: ${decisionLabel}`,
+        )
+        await ctx.answerCbQuery("Response sent.")
+      } catch (error) {
+        console.error("Failed to reply to permission", error)
+        await ctx.answerCbQuery("Failed to send response.")
+      }
       return
     }
 
-    try {
-      await opencode.replyToPermission(
-        requestId,
-        permissionReply,
-        pending.directory,
-      )
-      pendingPermissions.delete(requestId)
-      const decisionLabel = formatPermissionDecision(permissionReply)
-      await bot.telegram.editMessageText(
-        pending.chatId,
-        pending.messageId,
-        undefined,
-        `${pending.summary}\nDecision: ${decisionLabel}`,
-      )
-      await ctx.answerCbQuery("Response sent.")
-    } catch (error) {
-      console.error("Failed to reply to permission", error)
-      await ctx.answerCbQuery("Failed to send response.")
+    const parsed = questionParsed
+    if (!parsed) {
+      return
+    }
+
+    const pending = pendingQuestions.get(parsed.requestId)
+    if (!pending) {
+      await ctx.answerCbQuery("Question request not found.")
+      return
+    }
+
+    if (ctx.chat?.id !== pending.chatId) {
+      await ctx.answerCbQuery("Not authorized.")
+      return
+    }
+
+    if (parsed.action === "cancel") {
+      try {
+        await opencode.rejectQuestion(pending.request.id, pending.directory)
+      } catch (error) {
+        console.error("Failed to reject question", error)
+      }
+
+      deletePendingQuestion(pending)
+      try {
+        await bot.telegram.editMessageText(
+          pending.chatId,
+          pending.messageId,
+          undefined,
+          `${buildQuestionPromptText(pending)}\n\nStatus: Cancelled`,
+        )
+      } catch (error) {
+        console.error("Failed to update cancelled question message", error)
+      }
+
+      await ctx.answerCbQuery("Cancelled.")
+      return
+    }
+
+    const question = pending.request.questions[pending.currentIndex]
+    if (!question) {
+      await ctx.answerCbQuery("Question not available.")
+      return
+    }
+
+    const options = question.options ?? []
+    const optionLabels = new Set(options.map((option) => option.label))
+
+    if (parsed.action === "option") {
+      if (parsed.optionIndex >= options.length) {
+        await ctx.answerCbQuery("Invalid option.")
+        return
+      }
+
+      const selectedOption = options[parsed.optionIndex]
+      if (!selectedOption) {
+        await ctx.answerCbQuery("Invalid option.")
+        return
+      }
+
+      const selectedLabel = selectedOption.label
+      if (question.multiple) {
+        const current = pending.answers[pending.currentIndex]
+        const base = Array.isArray(current)
+          ? current.filter((value) => optionLabels.has(value))
+          : []
+
+        const next = base.includes(selectedLabel)
+          ? base.filter((value) => value !== selectedLabel)
+          : [...base, selectedLabel]
+
+        pending.answers[pending.currentIndex] = next
+
+        try {
+          await updateQuestionMessage(pending)
+          await ctx.answerCbQuery("Updated.")
+        } catch (error) {
+          console.error("Failed to update question message", error)
+          await ctx.answerCbQuery("Failed to update.")
+        }
+        return
+      }
+
+      pending.answers[pending.currentIndex] = [selectedLabel]
+      try {
+        await advanceQuestionOrSubmit(pending)
+        await ctx.answerCbQuery("Selected.")
+      } catch (error) {
+        console.error("Failed to submit question answer", error)
+        await ctx.answerCbQuery("Failed to send answer.")
+      }
+      return
+    }
+
+    if (parsed.action === "next") {
+      if (!question.multiple) {
+        await ctx.answerCbQuery("Select an option.")
+        return
+      }
+
+      const current = pending.answers[pending.currentIndex]
+      const hasAnswer = Array.isArray(current) && current.length > 0
+      if (!hasAnswer) {
+        await ctx.answerCbQuery(
+          question.custom === false
+            ? "Select at least one option."
+            : "Select at least one option or type an answer.",
+        )
+        return
+      }
+
+      try {
+        await advanceQuestionOrSubmit(pending)
+        await ctx.answerCbQuery("Sent.")
+      } catch (error) {
+        console.error("Failed to submit question answer", error)
+        await ctx.answerCbQuery("Failed to send answer.")
+      }
     }
   })
 
-  bot.on("text", (ctx) => {
+  bot.on("text", async (ctx) => {
     if (!isAuthorized(ctx.from, config.allowedUserId)) {
       void ctx.reply("Not authorized.")
       return
@@ -804,6 +1403,15 @@ export const startBot = (
     const userLabel = formatUserLabel(ctx.from)
 
     console.log(`[telegram] ${userLabel}: ${text}`)
+
+    const chatId = ctx.chat?.id
+    const replyToMessageId = ctx.message?.message_id
+    if (chatId) {
+      const handled = await handleQuestionTextAnswer(chatId, replyToMessageId, text)
+      if (handled) {
+        return
+      }
+    }
 
     runPrompt(ctx, userLabel, { text })
   })
@@ -819,6 +1427,14 @@ export const startBot = (
     }
 
     if (isCommandMessage(ctx.message)) {
+      return
+    }
+
+    const chatId = ctx.chat?.id
+    if (chatId && getPendingQuestionForChat(chatId)) {
+      void ctx.reply(
+        "OpenCode is waiting for you to answer a question. Please reply with text or use the buttons.",
+      )
       return
     }
 
@@ -869,6 +1485,14 @@ export const startBot = (
     }
 
     if (isCommandMessage(ctx.message)) {
+      return
+    }
+
+    const chatId = ctx.chat?.id
+    if (chatId && getPendingQuestionForChat(chatId)) {
+      void ctx.reply(
+        "OpenCode is waiting for you to answer a question. Please reply with text or use the buttons.",
+      )
       return
     }
 

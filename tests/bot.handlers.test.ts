@@ -221,7 +221,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
 
     const projects = {
@@ -291,7 +291,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
 
     const projects = {
@@ -377,7 +377,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
 
     const projects = {
@@ -463,7 +463,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
 
     const projects = {
@@ -549,7 +549,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
 
     const projects = {
@@ -628,7 +628,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
 
     const projects = {
@@ -699,7 +699,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
 
     const projects = {
@@ -763,7 +763,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn((handlers: any) => {
+      startEventStream: vi.fn((handlers: any) => {
         permissionHandlers.onPermissionAsked = handlers.onPermissionAsked
         return { stop: () => undefined }
       }),
@@ -849,6 +849,726 @@ describe("bot handler behavior", () => {
     )
   })
 
+  it("question flow: event -> inline buttons -> callback -> reply + edit", async () => {
+    const eventHandlers: { onQuestionAsked?: any } = {}
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      replyToQuestion: vi.fn(async () => true),
+      rejectQuestion: vi.fn(async () => true),
+      startEventStream: vi.fn((handlers: any) => {
+        eventHandlers.onQuestionAsked = handlers.onQuestionAsked
+        return { stop: () => undefined }
+      }),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await eventHandlers.onQuestionAsked({
+      request: {
+        id: "q-1",
+        sessionID: "session-1",
+        questions: [
+          {
+            header: "Pick",
+            question: "Choose one option",
+            options: [
+              { label: "A", description: "Option A" },
+              { label: "B", description: "Option B" },
+            ],
+          },
+        ],
+      },
+      directory: "/home/user",
+    })
+
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      expect.stringContaining("OpenCode question"),
+      expect.objectContaining({
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "1", callback_data: "q:q-1:opt:0" },
+              { text: "2", callback_data: "q:q-1:opt:1" },
+            ],
+            [{ text: "Cancel", callback_data: "q:q-1:cancel" }],
+          ],
+        },
+      }),
+    )
+
+    await bot.dispatchOn(
+      "callback_query",
+      createCallbackCtx({ userId: 1, chatId: 10, data: "q:q-1:opt:0" }),
+    )
+
+    expect(opencode.replyToQuestion).toHaveBeenCalledWith(
+      "q-1",
+      [["A"]],
+      "/home/user",
+    )
+    expect(bot.telegram.editMessageText).toHaveBeenCalledWith(
+      10,
+      123,
+      undefined,
+      expect.stringContaining("Status: Answer sent"),
+    )
+  })
+
+  it("question flow: multi-select toggles options and submits on Submit", async () => {
+    const eventHandlers: { onQuestionAsked?: any } = {}
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      replyToQuestion: vi.fn(async () => true),
+      rejectQuestion: vi.fn(async () => true),
+      startEventStream: vi.fn((handlers: any) => {
+        eventHandlers.onQuestionAsked = handlers.onQuestionAsked
+        return { stop: () => undefined }
+      }),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await eventHandlers.onQuestionAsked({
+      request: {
+        id: "q-multi",
+        sessionID: "session-1",
+        questions: [
+          {
+            header: "Pick",
+            question: "Choose one or more",
+            multiple: true,
+            options: [
+              { label: "Typecheck", description: "Run tsc" },
+              { label: "Tests", description: "Run vitest" },
+              { label: "Build", description: "Run build" },
+            ],
+          },
+        ],
+      },
+      directory: "/home/user",
+    })
+
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      expect.stringContaining("OpenCode question"),
+      expect.objectContaining({
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "1", callback_data: "q:q-multi:opt:0" },
+              { text: "2", callback_data: "q:q-multi:opt:1" },
+              { text: "3", callback_data: "q:q-multi:opt:2" },
+            ],
+            [
+              { text: "Submit", callback_data: "q:q-multi:next" },
+              { text: "Cancel", callback_data: "q:q-multi:cancel" },
+            ],
+          ],
+        },
+      }),
+    )
+
+    await bot.dispatchOn(
+      "callback_query",
+      createCallbackCtx({ userId: 1, chatId: 10, data: "q:q-multi:opt:0" }),
+    )
+
+    expect(bot.telegram.editMessageText).toHaveBeenCalledWith(
+      10,
+      123,
+      undefined,
+      expect.stringContaining("[x] 1) Typecheck"),
+      expect.anything(),
+    )
+
+    await bot.dispatchOn(
+      "callback_query",
+      createCallbackCtx({ userId: 1, chatId: 10, data: "q:q-multi:opt:2" }),
+    )
+
+    expect(bot.telegram.editMessageText).toHaveBeenCalledWith(
+      10,
+      123,
+      undefined,
+      expect.stringContaining("[x] 3) Build"),
+      expect.anything(),
+    )
+
+    await bot.dispatchOn(
+      "callback_query",
+      createCallbackCtx({ userId: 1, chatId: 10, data: "q:q-multi:next" }),
+    )
+
+    expect(opencode.replyToQuestion).toHaveBeenCalledWith(
+      "q-multi",
+      [["Typecheck", "Build"]],
+      "/home/user",
+    )
+    expect(bot.telegram.editMessageText).toHaveBeenCalledWith(
+      10,
+      123,
+      undefined,
+      expect.stringContaining("Status: Answer sent"),
+    )
+  })
+
+  it("question flow: multiple questions advances and submits once", async () => {
+    const eventHandlers: { onQuestionAsked?: any } = {}
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      replyToQuestion: vi.fn(async () => true),
+      rejectQuestion: vi.fn(async () => true),
+      startEventStream: vi.fn((handlers: any) => {
+        eventHandlers.onQuestionAsked = handlers.onQuestionAsked
+        return { stop: () => undefined }
+      }),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await eventHandlers.onQuestionAsked({
+      request: {
+        id: "q-two",
+        sessionID: "session-1",
+        questions: [
+          {
+            header: "Step 1",
+            question: "Choose A or B",
+            options: [
+              { label: "A", description: "Option A" },
+              { label: "B", description: "Option B" },
+            ],
+          },
+          {
+            header: "Step 2",
+            question: "Choose X or Y",
+            options: [
+              { label: "X", description: "Option X" },
+              { label: "Y", description: "Option Y" },
+            ],
+          },
+        ],
+      },
+      directory: "/home/user",
+    })
+
+    await bot.dispatchOn(
+      "callback_query",
+      createCallbackCtx({ userId: 1, chatId: 10, data: "q:q-two:opt:1" }),
+    )
+
+    expect(opencode.replyToQuestion).not.toHaveBeenCalled()
+    expect(bot.telegram.editMessageText).toHaveBeenCalledWith(
+      10,
+      123,
+      undefined,
+      expect.stringContaining("OpenCode question (2/2)"),
+      expect.anything(),
+    )
+
+    await bot.dispatchOn(
+      "callback_query",
+      createCallbackCtx({ userId: 1, chatId: 10, data: "q:q-two:opt:0" }),
+    )
+
+    expect(opencode.replyToQuestion).toHaveBeenCalledWith(
+      "q-two",
+      [["B"], ["X"]],
+      "/home/user",
+    )
+    expect(bot.telegram.editMessageText).toHaveBeenCalledWith(
+      10,
+      123,
+      undefined,
+      expect.stringContaining("Status: Answer sent"),
+    )
+  })
+
+  it("question flow: cancel rejects the question and clears pending state", async () => {
+    const eventHandlers: { onQuestionAsked?: any } = {}
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async () => ({ reply: "ok", model: null })),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      replyToQuestion: vi.fn(async () => true),
+      rejectQuestion: vi.fn(async () => true),
+      startEventStream: vi.fn((handlers: any) => {
+        eventHandlers.onQuestionAsked = handlers.onQuestionAsked
+        return { stop: () => undefined }
+      }),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await eventHandlers.onQuestionAsked({
+      request: {
+        id: "q-cancel",
+        sessionID: "session-1",
+        questions: [
+          {
+            header: "Pick",
+            question: "Choose one option",
+            options: [
+              { label: "A", description: "Option A" },
+              { label: "B", description: "Option B" },
+            ],
+          },
+        ],
+      },
+      directory: "/home/user",
+    })
+
+    const cancelCtx = createCallbackCtx({
+      userId: 1,
+      chatId: 10,
+      data: "q:q-cancel:cancel",
+    })
+    await bot.dispatchOn("callback_query", cancelCtx)
+
+    expect(opencode.rejectQuestion).toHaveBeenCalledWith("q-cancel", "/home/user")
+    expect(bot.telegram.editMessageText).toHaveBeenCalledWith(
+      10,
+      123,
+      undefined,
+      expect.stringContaining("Status: Cancelled"),
+    )
+    expect(cancelCtx.answerCbQuery).toHaveBeenCalledWith("Cancelled.")
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "hello", messageId: 200 }),
+    )
+    await flushMicrotasks()
+
+    expect(opencode.promptFromChat).toHaveBeenCalledTimes(1)
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "ok",
+      expect.objectContaining({ reply_parameters: { message_id: 200 } }),
+    )
+  })
+
+  it("question flow: custom=false does not accept typed answers", async () => {
+    const eventHandlers: { onQuestionAsked?: any } = {}
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async () => ({ reply: "ok", model: null })),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      replyToQuestion: vi.fn(async () => true),
+      rejectQuestion: vi.fn(async () => true),
+      startEventStream: vi.fn((handlers: any) => {
+        eventHandlers.onQuestionAsked = handlers.onQuestionAsked
+        return { stop: () => undefined }
+      }),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await eventHandlers.onQuestionAsked({
+      request: {
+        id: "q-custom-off",
+        sessionID: "session-1",
+        questions: [
+          {
+            header: "Pick",
+            question: "Choose one option",
+            custom: false,
+            options: [
+              { label: "A", description: "Option A" },
+              { label: "B", description: "Option B" },
+            ],
+          },
+        ],
+      },
+      directory: "/home/user",
+    })
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "my answer", messageId: 300 }),
+    )
+    await flushMicrotasks()
+
+    expect(opencode.replyToQuestion).not.toHaveBeenCalled()
+    expect(opencode.promptFromChat).not.toHaveBeenCalled()
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "Please choose one of the options for this question.",
+      expect.objectContaining({ reply_parameters: { message_id: 300 } }),
+    )
+  })
+
+  it("question flow: multi-select Submit with nothing selected does not reply to OpenCode", async () => {
+    const eventHandlers: { onQuestionAsked?: any } = {}
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      replyToQuestion: vi.fn(async () => true),
+      rejectQuestion: vi.fn(async () => true),
+      startEventStream: vi.fn((handlers: any) => {
+        eventHandlers.onQuestionAsked = handlers.onQuestionAsked
+        return { stop: () => undefined }
+      }),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await eventHandlers.onQuestionAsked({
+      request: {
+        id: "q-empty",
+        sessionID: "session-1",
+        questions: [
+          {
+            header: "Pick",
+            question: "Choose one or more",
+            multiple: true,
+            options: [
+              { label: "A", description: "Option A" },
+              { label: "B", description: "Option B" },
+            ],
+          },
+        ],
+      },
+      directory: "/home/user",
+    })
+
+    const submitCtx = createCallbackCtx({
+      userId: 1,
+      chatId: 10,
+      data: "q:q-empty:next",
+    })
+    await bot.dispatchOn("callback_query", submitCtx)
+
+    expect(opencode.replyToQuestion).not.toHaveBeenCalled()
+    expect(submitCtx.answerCbQuery).toHaveBeenCalledWith(
+      "Select at least one option or type an answer.",
+    )
+  })
+
+  it("treats next message as question answer while prompt is in-flight", async () => {
+    let resolvePrompt: ((value: any) => void) | null = null
+    const pendingPrompt = new Promise((resolve) => {
+      resolvePrompt = resolve
+    })
+
+    const eventHandlers: { onQuestionAsked?: any } = {}
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(() => pendingPrompt as any),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      replyToQuestion: vi.fn(async () => true),
+      rejectQuestion: vi.fn(async () => true),
+      startEventStream: vi.fn((handlers: any) => {
+        eventHandlers.onQuestionAsked = handlers.onQuestionAsked
+        return { stop: () => undefined }
+      }),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 10_000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "first", messageId: 1 }),
+    )
+    await flushMicrotasks()
+
+    await eventHandlers.onQuestionAsked({
+      request: {
+        id: "q-1",
+        sessionID: "session-1",
+        questions: [
+          {
+            header: "Answer",
+            question: "Type anything",
+            options: [{ label: "A", description: "Option A" }],
+          },
+        ],
+      },
+      directory: "/home/user",
+    })
+
+    await bot.dispatchOn(
+      "text",
+      createTextCtx({ userId: 1, chatId: 10, text: "my answer", messageId: 2 }),
+    )
+    await flushMicrotasks()
+
+    expect(opencode.promptFromChat).toHaveBeenCalledTimes(1)
+    expect(opencode.replyToQuestion).toHaveBeenCalledWith(
+      "q-1",
+      [["my answer"]],
+      "/home/user",
+    )
+    expect(bot.telegram.sendMessage).not.toHaveBeenCalledWith(
+      10,
+      "Your previous message has not been replied to yet. This message will be ignored.",
+      expect.objectContaining({ reply_parameters: { message_id: 2 } }),
+    )
+
+    resolvePrompt?.({ reply: "done", model: null })
+    await flushMicrotasks()
+  })
+
   it("/start enforces allowlist", async () => {
     const opencode = {
       ensureSessionId: vi.fn(async () => "session-1"),
@@ -859,7 +1579,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -912,7 +1632,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
 
     const projects = {
@@ -1068,7 +1788,7 @@ describe("bot handler behavior", () => {
         { id: "p", models: { m: { name: "M" } } },
       ]),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -1152,7 +1872,7 @@ describe("bot handler behavior", () => {
         },
       ]),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -1264,7 +1984,7 @@ describe("bot handler behavior", () => {
         throw new Error("boom")
       }),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -1317,7 +2037,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -1386,7 +2106,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -1474,7 +2194,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -1524,7 +2244,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -1581,7 +2301,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
 
     const projects = {
@@ -1667,7 +2387,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
 
     const projects = {
@@ -1748,7 +2468,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
 
     const projects = {
@@ -1822,7 +2542,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -1886,7 +2606,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -1944,7 +2664,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -1999,7 +2719,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -2048,7 +2768,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
@@ -2107,7 +2827,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn((handlers: any) => {
+      startEventStream: vi.fn((handlers: any) => {
         permissionHandlers.onPermissionAsked = handlers.onPermissionAsked
         return { stop: () => undefined }
       }),
@@ -2170,7 +2890,7 @@ describe("bot handler behavior", () => {
       replyToPermission: vi.fn(async () => {
         throw new Error("boom")
       }),
-      startPermissionEventStream: vi.fn((handlers: any) => {
+      startEventStream: vi.fn((handlers: any) => {
         permissionHandlers.onPermissionAsked = handlers.onPermissionAsked
         return { stop: () => undefined }
       }),
@@ -2270,7 +2990,7 @@ describe("bot handler behavior", () => {
       getSessionOwner: vi.fn(() => null),
       listModels: vi.fn(async () => []),
       replyToPermission: vi.fn(async () => true),
-      startPermissionEventStream: vi.fn(() => ({ stop: () => undefined })),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
