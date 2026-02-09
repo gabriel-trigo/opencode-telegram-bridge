@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.7.0
+
+### Minor Changes
+
+- 2040ede: Add `/status` Telegram command to show current project/model/session status, including context usage based on the latest assistant message token stats.
+
 ## 1.6.0
 
 ### Minor Changes
