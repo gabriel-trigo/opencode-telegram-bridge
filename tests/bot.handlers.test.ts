@@ -277,7 +277,7 @@ describe("bot handler behavior", () => {
   })
 
   it("blocks concurrent prompts per chat", async () => {
-    let resolvePrompt: ((value: any) => void) | null = null
+    let resolvePrompt!: (value: any) => void
     const pending = new Promise((resolve) => {
       resolvePrompt = resolve
     })
@@ -344,7 +344,7 @@ describe("bot handler behavior", () => {
       expect.objectContaining({ reply_parameters: { message_id: 2 } }),
     )
 
-    resolvePrompt?.({ reply: "done", model: null })
+    resolvePrompt({ reply: "done", model: null })
     await flushMicrotasks()
   })
 
@@ -446,7 +446,7 @@ describe("bot handler behavior", () => {
     vi.useFakeTimers()
 
     let capturedSignal: AbortSignal | undefined
-    let resolvePrompt: ((value: any) => void) | null = null
+    let resolvePrompt!: (value: any) => void
     const firstPrompt = new Promise((resolve) => {
       resolvePrompt = resolve
     })
@@ -515,7 +515,7 @@ describe("bot handler behavior", () => {
       expect.objectContaining({ reply_parameters: { message_id: 10 } }),
     )
 
-    resolvePrompt?.({ reply: "late", model: null })
+    resolvePrompt({ reply: "late", model: null })
     await flushMicrotasks()
 
     opencode.promptFromChat.mockResolvedValueOnce({ reply: "second", model: null })
@@ -535,7 +535,7 @@ describe("bot handler behavior", () => {
   it("timeout message reports session not ready when ensureSessionId is still pending", async () => {
     vi.useFakeTimers()
 
-    let resolveSessionId: ((value: string) => void) | null = null
+    let resolveSessionId!: (value: string) => void
     const pendingSessionId = new Promise<string>((resolve) => {
       resolveSessionId = resolve
     })
@@ -601,7 +601,7 @@ describe("bot handler behavior", () => {
     expect(opencode.abortSession).not.toHaveBeenCalled()
     expect(opencode.promptFromChat).not.toHaveBeenCalled()
 
-    resolveSessionId?.("session-1")
+    resolveSessionId("session-1")
     await flushMicrotasks()
 
     // Still should not proceed to send the prompt after timing out.
@@ -1470,7 +1470,7 @@ describe("bot handler behavior", () => {
   })
 
   it("treats next message as question answer while prompt is in-flight", async () => {
-    let resolvePrompt: ((value: any) => void) | null = null
+    let resolvePrompt!: (value: any) => void
     const pendingPrompt = new Promise((resolve) => {
       resolvePrompt = resolve
     })
@@ -1565,7 +1565,7 @@ describe("bot handler behavior", () => {
       expect.objectContaining({ reply_parameters: { message_id: 2 } }),
     )
 
-    resolvePrompt?.({ reply: "done", model: null })
+    resolvePrompt({ reply: "done", model: null })
     await flushMicrotasks()
   })
 
@@ -1798,7 +1798,7 @@ describe("bot handler behavior", () => {
     }
     const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
     const chatModels = {
-      getModel: vi.fn(() => null),
+      getModel: vi.fn((): { providerID: string; modelID: string } | null => null),
       setModel: vi.fn(),
       clearModel: vi.fn(),
       clearAll: vi.fn(),
@@ -2026,6 +2026,129 @@ describe("bot handler behavior", () => {
     await bot.dispatchCommand("model", ctx)
     expect(ctx.reply).toHaveBeenCalledWith(
       "Unexpected error when changing model. Check server logs.",
+    )
+  })
+
+  it("/status reports a clear message when no session exists", async () => {
+    const opencode = {
+      getSessionId: vi.fn(() => undefined),
+      getLatestAssistantStats: vi.fn(async () => ({ model: null, tokens: null })),
+      listModels: vi.fn(async () => []),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
+      getSessionOwner: vi.fn(() => null),
+      resetAllSessions: vi.fn(() => undefined),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: vi.fn(() => null),
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    const ctx = createTextCtx({ userId: 1, chatId: 10, text: "/status" })
+    await bot.dispatchCommand("status", ctx)
+
+    expect(opencode.getLatestAssistantStats).not.toHaveBeenCalled()
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("No OpenCode session yet"),
+    )
+  })
+
+  it("/status shows context usage based on last assistant message", async () => {
+    const opencode = {
+      getSessionId: vi.fn(() => "session-1"),
+      getLatestAssistantStats: vi.fn(async () => ({
+        model: { providerID: "openai", modelID: "gpt-5.3-codex" },
+        tokens: {
+          input: 1000,
+          output: 200,
+          reasoning: 0,
+          cache: { read: 0, write: 0 },
+        },
+      })),
+      listModels: vi.fn(async () => [
+        {
+          id: "openai",
+          models: {
+            "gpt-5.3-codex": {
+              limit: { context: 8000 },
+            },
+          },
+        },
+      ]),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
+      getSessionOwner: vi.fn(() => null),
+      resetAllSessions: vi.fn(() => undefined),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: vi.fn(() => null),
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserId: 1,
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    const ctx = createTextCtx({ userId: 1, chatId: 10, text: "/status" })
+    await bot.dispatchCommand("status", ctx)
+
+    expect(opencode.getLatestAssistantStats).toHaveBeenCalledWith(
+      "session-1",
+      "/home/user",
+    )
+    expect(opencode.listModels).toHaveBeenCalledWith("/home/user")
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Context (input): 1000 / 8000 (12.5%)"),
     )
   })
 
@@ -2546,7 +2669,12 @@ describe("bot handler behavior", () => {
     }
     const projects = {
       listProjects: () => [{ alias: "home", path: "/home/user" }],
-      getProject: vi.fn(() => ({ alias: "home", path: "/home/user" })),
+      getProject: vi.fn(
+        (): { alias: string; path: string } | null => ({
+          alias: "home",
+          path: "/home/user",
+        }),
+      ),
       addProject: vi.fn(),
       removeProject: vi.fn(),
     }

@@ -42,6 +42,16 @@ export type ModelProvider = {
   models: Record<string, { name?: string } | undefined>
 }
 
+export type StatusTokenUsage = {
+  input: number
+  output: number
+  reasoning: number
+  cache: {
+    read: number
+    write: number
+  }
+}
+
 export const isAuthorized = (
   user: TelegramUser | undefined,
   allowedUserId: number,
@@ -275,4 +285,56 @@ export const formatCommandOutput = (value: string | undefined) => {
   }
 
   return `${trimmed.slice(0, maxLength)}...`
+}
+
+const formatPercentage = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return "?%"
+  }
+
+  return `${(value * 100).toFixed(1)}%`
+}
+
+export const formatStatusReply = (status: {
+  project: { alias: string; path: string }
+  sessionId: string | null
+  model: { providerID: string; modelID: string } | null
+  tokens: StatusTokenUsage | null
+  contextLimit: number | null
+}) => {
+  const lines: string[] = []
+  lines.push(`Project: ${status.project.alias}: ${status.project.path}`)
+
+  lines.push(
+    status.model
+      ? `Model: ${status.model.providerID}/${status.model.modelID}`
+      : "Model: (unknown yet)",
+  )
+
+  lines.push(status.sessionId ? `Session: ${status.sessionId}` : "Session: (no session yet)")
+
+  if (!status.tokens) {
+    const reason = status.sessionId ? "no assistant message yet" : "no session yet"
+    const suffix =
+      status.contextLimit != null
+        ? ` Limit: ${status.contextLimit}`
+        : ""
+    lines.push(`Context (input): unavailable (${reason}).${suffix}`)
+    return lines.join("\n")
+  }
+
+  if (status.contextLimit != null && status.contextLimit > 0) {
+    const ratio = status.tokens.input / status.contextLimit
+    lines.push(
+      `Context (input): ${status.tokens.input} / ${status.contextLimit} (${formatPercentage(ratio)})`,
+    )
+  } else {
+    lines.push(`Context (input): ${status.tokens.input} (limit unknown)`)
+  }
+
+  lines.push(
+    `Tokens (last assistant): in=${status.tokens.input} out=${status.tokens.output} reasoning=${status.tokens.reasoning} cache(r/w)=${status.tokens.cache.read}/${status.tokens.cache.write}`,
+  )
+
+  return lines.join("\n")
 }

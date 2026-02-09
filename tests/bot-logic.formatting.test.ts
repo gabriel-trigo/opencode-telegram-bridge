@@ -4,6 +4,7 @@ import {
   formatCommandOutput,
   formatModelList,
   formatProjectList,
+  formatStatusReply,
 } from "../src/bot-logic.js"
 
 describe("formatProjectList", () => {
@@ -69,5 +70,51 @@ describe("formatCommandOutput", () => {
     const long = "a".repeat(900)
     const formatted = formatCommandOutput(`\n${long}\n`)
     expect(formatted).toBe("a".repeat(800) + "...")
+  })
+})
+
+describe("formatStatusReply", () => {
+  it("prints project/model/session and context usage", () => {
+    expect(
+      formatStatusReply({
+        project: { alias: "home", path: "/home/user" },
+        model: { providerID: "openai", modelID: "gpt-5.3-codex" },
+        sessionId: "session-1",
+        tokens: {
+          input: 1234,
+          output: 456,
+          reasoning: 0,
+          cache: { read: 10, write: 2 },
+        },
+        contextLimit: 8192,
+      }),
+    ).toBe(
+      [
+        "Project: home: /home/user",
+        "Model: openai/gpt-5.3-codex",
+        "Session: session-1",
+        "Context (input): 1234 / 8192 (15.1%)",
+        "Tokens (last assistant): in=1234 out=456 reasoning=0 cache(r/w)=10/2",
+      ].join("\n"),
+    )
+  })
+
+  it("prints a clear message when no assistant message exists yet", () => {
+    expect(
+      formatStatusReply({
+        project: { alias: "home", path: "/home/user" },
+        model: { providerID: "openai", modelID: "gpt-5.3-codex" },
+        sessionId: "session-1",
+        tokens: null,
+        contextLimit: 8192,
+      }),
+    ).toBe(
+      [
+        "Project: home: /home/user",
+        "Model: openai/gpt-5.3-codex",
+        "Session: session-1",
+        "Context (input): unavailable (no assistant message yet). Limit: 8192",
+      ].join("\n"),
+    )
   })
 })

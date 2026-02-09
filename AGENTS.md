@@ -45,6 +45,7 @@ Run a Telegram bot that forwards Telegram messages to an OpenCode backend and re
 - `/model` - show the active model for this chat (after the first reply).
 - `/model list` - list available models from the OpenCode server.
 - `/model set <provider>/<model>` - set the active model for this chat.
+- `/status` - show current project/model/session status.
 - `/abort` - abort the in-flight prompt for this chat.
 - `/reset` - reset the OpenCode session for the active project.
 - `/reboot` - restart the OpenCode service and clear cached sessions (requires `OPENCODE_RESTART_COMMAND`).

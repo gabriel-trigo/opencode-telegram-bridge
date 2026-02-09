@@ -1,7 +1,9 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import type {
+  AssistantMessage,
   Config,
   GlobalEvent,
+  Message,
   Part,
   PermissionRequest,
   QuestionRequest,
@@ -18,6 +20,7 @@ import {
 } from "./errors.js"
 
 export type OpencodeBridge = {
+  getSessionId: (chatId: number, projectDir: string) => string | undefined
   ensureSessionId: (chatId: number, projectDir: string) => Promise<string>
   promptFromChat: (
     chatId: number,
@@ -25,6 +28,10 @@ export type OpencodeBridge = {
     projectDir: string,
     options?: PromptOptions,
   ) => Promise<PromptResult>
+  getLatestAssistantStats: (
+    sessionId: string,
+    projectDir: string,
+  ) => Promise<LatestAssistantStats>
   abortSession: (sessionId: string, projectDir: string) => Promise<boolean>
   resetSession: (chatId: number, projectDir: string) => boolean
   resetAllSessions: () => void
@@ -88,6 +95,21 @@ export type ModelRef = {
 export type PromptResult = {
   reply: string
   model: ModelRef | null
+}
+
+export type AssistantTokenUsage = {
+  input: number
+  output: number
+  reasoning: number
+  cache: {
+    read: number
+    write: number
+  }
+}
+
+export type LatestAssistantStats = {
+  model: ModelRef | null
+  tokens: AssistantTokenUsage | null
 }
 
 export type PermissionEventHandlers = {
@@ -283,6 +305,9 @@ export const createOpencodeBridge = (
   }
 
   return {
+    getSessionId(chatId, projectDir) {
+      return sessions.getSessionId(chatId, projectDir)
+    },
     async ensureSessionId(chatId, projectDir) {
       return ensureSession(chatId, projectDir)
     },
@@ -369,6 +394,102 @@ export const createOpencodeBridge = (
         : null
 
       return { reply, model }
+    },
+    async getLatestAssistantStats(sessionId, projectDir) {
+      const result = await client.session.messages({
+        sessionID: sessionId,
+        directory: projectDir,
+      })
+      const messages = requireData(result, "session.messages")
+
+      const normalizeTokens = (tokens: unknown): AssistantTokenUsage | null => {
+        if (!tokens || typeof tokens !== "object") {
+          return null
+        }
+
+        const input = (tokens as { input?: unknown }).input
+        const output = (tokens as { output?: unknown }).output
+        const reasoning = (tokens as { reasoning?: unknown }).reasoning
+        const cache = (tokens as { cache?: unknown }).cache
+        const cacheRead =
+          cache && typeof cache === "object" ? (cache as { read?: unknown }).read : undefined
+        const cacheWrite =
+          cache && typeof cache === "object" ? (cache as { write?: unknown }).write : undefined
+
+        if (
+          typeof input !== "number" ||
+          !Number.isFinite(input) ||
+          typeof output !== "number" ||
+          !Number.isFinite(output) ||
+          typeof reasoning !== "number" ||
+          !Number.isFinite(reasoning) ||
+          typeof cacheRead !== "number" ||
+          !Number.isFinite(cacheRead) ||
+          typeof cacheWrite !== "number" ||
+          !Number.isFinite(cacheWrite)
+        ) {
+          return null
+        }
+
+        return {
+          input,
+          output,
+          reasoning,
+          cache: {
+            read: cacheRead,
+            write: cacheWrite,
+          },
+        }
+      }
+
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const info = messages[index]?.info
+        if (!info || typeof info !== "object") {
+          continue
+        }
+
+        if ((info as Message).role !== "assistant") {
+          continue
+        }
+
+        const assistant = info as AssistantMessage
+        return {
+          model: {
+            providerID: assistant.providerID,
+            modelID: assistant.modelID,
+          },
+          tokens: normalizeTokens(assistant.tokens),
+        }
+      }
+
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const info = messages[index]?.info
+        if (!info || typeof info !== "object") {
+          continue
+        }
+
+        if ((info as Message).role !== "user") {
+          continue
+        }
+
+        const model = (info as { model?: unknown }).model
+        if (!model || typeof model !== "object") {
+          continue
+        }
+
+        const providerID = (model as { providerID?: unknown }).providerID
+        const modelID = (model as { modelID?: unknown }).modelID
+        if (typeof providerID !== "string" || typeof modelID !== "string") {
+          continue
+        }
+
+        return {
+          model: { providerID, modelID },
+          tokens: null,
+        }
+      }
+
+      return { model: null, tokens: null }
     },
     async abortSession(sessionId, projectDir) {
       const result = await client.session.abort({

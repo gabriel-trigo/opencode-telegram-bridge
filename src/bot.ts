@@ -6,7 +6,12 @@ import type { QuestionRequest } from "@opencode-ai/sdk/v2"
 import { Markup, Telegraf } from "telegraf"
 
 import type { BotConfig, RestartCommandConfig } from "./config.js"
-import type { OpencodeBridge, PermissionReply, PromptInput } from "./opencode.js"
+import type {
+  LatestAssistantStats,
+  OpencodeBridge,
+  PermissionReply,
+  PromptInput,
+} from "./opencode.js"
 import { createPromptGuard } from "./prompt-guard.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
 import type { ChatModelStore, ChatProjectStore } from "./state.js"
@@ -35,6 +40,7 @@ import {
   formatModelList,
   formatPermissionDecision,
   formatProjectList,
+  formatStatusReply,
   formatUserLabel,
   isAuthorized,
   isCommandMessage,
@@ -411,6 +417,7 @@ export const startBot = (
         description: "Manage project aliases (list/current/add/remove/set)",
       },
       { command: "model", description: "Show, list, or set the active model" },
+      { command: "status", description: "Show project/model/session status" },
       { command: "reset", description: "Reset the active project session" },
       { command: "abort", description: "Abort the in-flight prompt" },
     ]
@@ -1062,6 +1069,101 @@ export const startBot = (
           : "Model command failed. Check server logs."
       await ctx.reply(message)
     }
+  })
+
+  const getModelContextLimit = (
+    providers: Array<{ id: string; models: Record<string, unknown> }>,
+    model: { providerID: string; modelID: string },
+  ): number | null => {
+    const provider = providers.find((entry) => entry.id === model.providerID)
+    if (!provider) {
+      return null
+    }
+
+    const info = provider.models[model.modelID]
+    if (!info || typeof info !== "object") {
+      return null
+    }
+
+    const limit = (info as { limit?: unknown }).limit
+    if (!limit || typeof limit !== "object") {
+      return null
+    }
+
+    const context = (limit as { context?: unknown }).context
+    if (typeof context !== "number" || !Number.isFinite(context)) {
+      return null
+    }
+
+    return context
+  }
+
+  bot.command("status", async (ctx) => {
+    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+      await ctx.reply("Not authorized.")
+      return
+    }
+
+    const chatId = ctx.chat?.id
+    if (!chatId) {
+      console.warn("Missing chat id for incoming status command")
+      await ctx.reply("Missing chat context.")
+      return
+    }
+
+    let project
+    try {
+      project = getProjectForChat(chatId)
+    } catch (error) {
+      console.error("Missing project for chat", { chatId, error })
+      await ctx.reply("Missing project configuration.")
+      return
+    }
+
+    const storedModel = chatModels.getModel(chatId, project.path)
+    const sessionId = opencode.getSessionId(chatId, project.path)
+    if (!sessionId) {
+      const base = formatStatusReply({
+        project,
+        model: storedModel,
+        sessionId: null,
+        tokens: null,
+        contextLimit: null,
+      })
+      await ctx.reply(`${base}\n\nNo OpenCode session yet. Send a message to start one.`)
+      return
+    }
+
+    let stats: LatestAssistantStats | null = null
+    try {
+      stats = await opencode.getLatestAssistantStats(sessionId, project.path)
+    } catch (error) {
+      console.error("Failed to fetch session messages for /status", error)
+    }
+
+    const model = storedModel ?? stats?.model ?? null
+
+    let contextLimit: number | null = null
+    if (model) {
+      try {
+        const providers = await opencode.listModels(project.path)
+        contextLimit = getModelContextLimit(
+          providers as unknown as Array<{ id: string; models: Record<string, unknown> }>,
+          model,
+        )
+      } catch (error) {
+        console.error("Failed to fetch providers for /status", error)
+      }
+    }
+
+    const reply = formatStatusReply({
+      project,
+      model,
+      sessionId,
+      tokens: stats?.tokens ?? null,
+      contextLimit,
+    })
+    await ctx.reply(reply)
   })
 
   bot.command("reset", async (ctx) => {
