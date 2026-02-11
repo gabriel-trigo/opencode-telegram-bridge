@@ -54,8 +54,8 @@ export type StatusTokenUsage = {
 
 export const isAuthorized = (
   user: TelegramUser | undefined,
-  allowedUserId: number,
-) => user?.id === allowedUserId
+  allowedUserIds: number[],
+) => (user?.id != null ? allowedUserIds.includes(user.id) : false)
 
 export const formatUserLabel = (user: TelegramUser | undefined) => {
   if (!user) {

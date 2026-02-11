@@ -56,6 +56,7 @@ describe("loadConfig", () => {
     setEnv({
       TELEGRAM_BOT_TOKEN: "token",
       TELEGRAM_ALLOWED_USER_ID: undefined,
+      TELEGRAM_ALLOWED_USER_IDS: undefined,
       OPENCODE_SERVER_URL: "http://localhost:4096",
       OPENCODE_RESTART_COMMAND: undefined,
       OPENCODE_RESTART_TIMEOUT_MS: undefined,
@@ -66,13 +67,16 @@ describe("loadConfig", () => {
     const run = () => loadConfig()
 
     expect(run).toThrowError(ConfigError)
-    expect(run).toThrowError("Missing TELEGRAM_ALLOWED_USER_ID")
+    expect(run).toThrowError(
+      "Missing TELEGRAM_ALLOWED_USER_ID (or TELEGRAM_ALLOWED_USER_IDS)",
+    )
   })
 
   it("throws when TELEGRAM_ALLOWED_USER_ID is not an integer", () => {
     setEnv({
       TELEGRAM_BOT_TOKEN: "token",
       TELEGRAM_ALLOWED_USER_ID: "nope",
+      TELEGRAM_ALLOWED_USER_IDS: undefined,
       OPENCODE_SERVER_URL: "http://localhost:4096",
       OPENCODE_RESTART_COMMAND: undefined,
       OPENCODE_RESTART_TIMEOUT_MS: undefined,
@@ -109,6 +113,7 @@ describe("loadConfig", () => {
     setEnv({
       TELEGRAM_BOT_TOKEN: "token",
       TELEGRAM_ALLOWED_USER_ID: "42",
+      TELEGRAM_ALLOWED_USER_IDS: undefined,
       OPENCODE_SERVER_URL: "http://localhost:4096",
       OPENCODE_SERVER_USERNAME: undefined,
       OPENCODE_SERVER_PASSWORD: undefined,
@@ -125,7 +130,7 @@ describe("loadConfig", () => {
     const promptTimeoutMs = 10 * 60 * 1000
 
     expect(config.botToken).toBe("token")
-    expect(config.allowedUserId).toBe(42)
+    expect(config.allowedUserIds).toEqual([42])
     expect(config.opencode.serverUrl).toBe("http://localhost:4096")
     expect(config.opencode.serverUsername).toBe("opencode")
     expect(config.opencode.serverPassword).toBeUndefined()
@@ -139,6 +144,7 @@ describe("loadConfig", () => {
     setEnv({
       TELEGRAM_BOT_TOKEN: "token",
       TELEGRAM_ALLOWED_USER_ID: "42",
+      TELEGRAM_ALLOWED_USER_IDS: undefined,
       OPENCODE_SERVER_URL: "http://localhost:4096",
       OPENCODE_SERVER_USERNAME: "custom",
       OPENCODE_SERVER_PASSWORD: "secret",
@@ -164,6 +170,7 @@ describe("loadConfig", () => {
     setEnv({
       TELEGRAM_BOT_TOKEN: "token",
       TELEGRAM_ALLOWED_USER_ID: "42",
+      TELEGRAM_ALLOWED_USER_IDS: undefined,
       OPENCODE_SERVER_URL: "http://localhost:4096",
       OPENCODE_RESTART_COMMAND: "systemctl restart opencode",
       OPENCODE_RESTART_TIMEOUT_MS: undefined,
@@ -183,6 +190,7 @@ describe("loadConfig", () => {
     setEnv({
       TELEGRAM_BOT_TOKEN: "token",
       TELEGRAM_ALLOWED_USER_ID: "42",
+      TELEGRAM_ALLOWED_USER_IDS: undefined,
       OPENCODE_SERVER_URL: "http://localhost:4096",
       OPENCODE_RESTART_COMMAND: undefined,
       OPENCODE_RESTART_TIMEOUT_MS: "5000",
@@ -202,6 +210,7 @@ describe("loadConfig", () => {
     setEnv({
       TELEGRAM_BOT_TOKEN: "token",
       TELEGRAM_ALLOWED_USER_ID: "42",
+      TELEGRAM_ALLOWED_USER_IDS: undefined,
       OPENCODE_SERVER_URL: "http://localhost:4096",
       OPENCODE_RESTART_COMMAND: undefined,
       OPENCODE_RESTART_TIMEOUT_MS: undefined,
@@ -222,6 +231,7 @@ describe("loadConfig", () => {
     setEnv({
       TELEGRAM_BOT_TOKEN: "token",
       TELEGRAM_ALLOWED_USER_ID: "42",
+      TELEGRAM_ALLOWED_USER_IDS: undefined,
       OPENCODE_SERVER_URL: "http://localhost:4096",
       OPENCODE_RESTART_COMMAND: undefined,
       OPENCODE_RESTART_TIMEOUT_MS: undefined,
@@ -234,6 +244,43 @@ describe("loadConfig", () => {
     expect(run).toThrowError(ConfigValidationError)
     expect(run).toThrowError(
       "OPENCODE_BRIDGE_RESTART_TIMEOUT_MS requires OPENCODE_BRIDGE_RESTART_COMMAND",
+    )
+  })
+
+  it("loads config with TELEGRAM_ALLOWED_USER_IDS", () => {
+    setEnv({
+      TELEGRAM_BOT_TOKEN: "token",
+      TELEGRAM_ALLOWED_USER_ID: undefined,
+      TELEGRAM_ALLOWED_USER_IDS: "41, 42",
+      OPENCODE_SERVER_URL: "http://localhost:4096",
+      OPENCODE_RESTART_COMMAND: undefined,
+      OPENCODE_RESTART_TIMEOUT_MS: undefined,
+      OPENCODE_BRIDGE_RESTART_COMMAND: undefined,
+      OPENCODE_BRIDGE_RESTART_TIMEOUT_MS: undefined,
+    })
+
+    const config = loadConfig()
+
+    expect(config.allowedUserIds).toEqual([41, 42])
+  })
+
+  it("throws when TELEGRAM_ALLOWED_USER_IDS contains non-integers", () => {
+    setEnv({
+      TELEGRAM_BOT_TOKEN: "token",
+      TELEGRAM_ALLOWED_USER_ID: undefined,
+      TELEGRAM_ALLOWED_USER_IDS: "42, nope",
+      OPENCODE_SERVER_URL: "http://localhost:4096",
+      OPENCODE_RESTART_COMMAND: undefined,
+      OPENCODE_RESTART_TIMEOUT_MS: undefined,
+      OPENCODE_BRIDGE_RESTART_COMMAND: undefined,
+      OPENCODE_BRIDGE_RESTART_TIMEOUT_MS: undefined,
+    })
+
+    const run = () => loadConfig()
+
+    expect(run).toThrowError(ConfigValidationError)
+    expect(run).toThrowError(
+      "TELEGRAM_ALLOWED_USER_IDS must be a comma-separated list of integers",
     )
   })
 })
