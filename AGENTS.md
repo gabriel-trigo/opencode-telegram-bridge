@@ -63,6 +63,20 @@ When new commands are added or changed, update this list and the command descrip
 ## Coding guidelines
 - Use custom error types instead of generic errors for better and cleaner error handling.
 
+## Changesets (required)
+
+This repo uses Changesets for releases.
+
+Important: CI will fail if a user-facing PR does not include a changeset.
+
+Before opening a PR (or pushing commits to `main` directly), add a changeset:
+
+```bash
+npx changeset
+```
+
+Pick the appropriate bump (usually `patch`), and commit the generated file under `.changeset/`.
+
 ## Useful commands
 - Install dependencies: `npm install`
 - Install docs site deps: `pip install mkdocs-material`
