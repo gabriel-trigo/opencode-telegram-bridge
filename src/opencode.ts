@@ -148,6 +148,45 @@ const extractText = (parts: Part[]) => {
   return textParts.join("\n").trim()
 }
 
+const extractProviderError = (parts: Part[]): string | null => {
+  const retries = parts.filter((part) => part.type === "retry") as Array<
+    Part & {
+      type: "retry"
+      error?: unknown
+    }
+  >
+
+  if (retries.length === 0) {
+    return null
+  }
+
+  const last = retries[retries.length - 1]
+  const error = last?.error
+  if (!error || typeof error !== "object") {
+    return "OpenCode reported a provider error, but error details were missing."
+  }
+
+  const name = (error as { name?: unknown }).name
+  const data = (error as { data?: unknown }).data
+  const message =
+    data && typeof data === "object" ? (data as { message?: unknown }).message : undefined
+  const statusCode =
+    data && typeof data === "object" ? (data as { statusCode?: unknown }).statusCode : undefined
+
+  const baseMessage = typeof message === "string" && message.trim() ? message.trim() : null
+  if (!baseMessage) {
+    return typeof name === "string" && name.trim()
+      ? `OpenCode provider error: ${name}`
+      : "OpenCode reported a provider error, but error details were missing."
+  }
+
+  if (typeof statusCode === "number" && Number.isFinite(statusCode)) {
+    return `OpenCode provider error (${statusCode}): ${baseMessage}`
+  }
+
+  return `OpenCode provider error: ${baseMessage}`
+}
+
 const requireData = <T>(
   result: { data?: T; error?: unknown },
   label: string,
@@ -385,7 +424,14 @@ export const createOpencodeBridge = (
       const response = requireData(responseResult, "session.prompt")
       const reply = extractText(response.parts)
       if (!reply) {
-        return { reply: "OpenCode returned no text output.", model: null }
+        const providerError = extractProviderError(response.parts)
+        if (providerError) {
+          throw new OpencodeRequestError(providerError)
+        }
+
+        throw new OpencodeRequestError(
+          "OpenCode returned no text output. This usually means the upstream provider failed; check the OpenCode server logs for details.",
+        )
       }
 
       const info = response.info
