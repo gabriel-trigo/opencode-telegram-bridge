@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.8.1
+
+### Patch Changes
+
+- 0cb9f52: Surface upstream provider errors in Telegram replies instead of the generic "OpenCode returned no text output" message.
+
 ## 1.8.0
 
 ### Minor Changes
