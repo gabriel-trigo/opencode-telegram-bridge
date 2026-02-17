@@ -865,7 +865,7 @@ export const startBot = (
   }
 
   bot.start(async (ctx) => {
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       await ctx.reply("Not authorized.")
       return
     }
@@ -874,7 +874,7 @@ export const startBot = (
   })
 
   bot.command("project", async (ctx) => {
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       await ctx.reply("Not authorized.")
       return
     }
@@ -970,7 +970,7 @@ export const startBot = (
   })
 
   bot.command("model", async (ctx) => {
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       await ctx.reply("Not authorized.")
       return
     }
@@ -1099,7 +1099,7 @@ export const startBot = (
   }
 
   bot.command("status", async (ctx) => {
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       await ctx.reply("Not authorized.")
       return
     }
@@ -1167,7 +1167,7 @@ export const startBot = (
   })
 
   bot.command("reset", async (ctx) => {
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       await ctx.reply("Not authorized.")
       return
     }
@@ -1198,7 +1198,7 @@ export const startBot = (
   })
 
   bot.command("abort", async (ctx) => {
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       await ctx.reply("Not authorized.")
       return
     }
@@ -1242,7 +1242,7 @@ export const startBot = (
   })
 
   bot.command("reboot", async (ctx) => {
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       await ctx.reply("Not authorized.")
       return
     }
@@ -1282,7 +1282,7 @@ export const startBot = (
   })
 
   bot.command("restart", async (ctx) => {
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       await ctx.reply("Not authorized.")
       return
     }
@@ -1333,7 +1333,7 @@ export const startBot = (
       return
     }
 
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       await ctx.answerCbQuery("Not authorized.")
       return
     }
@@ -1492,7 +1492,7 @@ export const startBot = (
   })
 
   bot.on("text", async (ctx) => {
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       void ctx.reply("Not authorized.")
       return
     }
@@ -1519,7 +1519,7 @@ export const startBot = (
   })
 
   bot.on("photo", (ctx) => {
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       void ctx.reply("Not authorized.")
       return
     }
@@ -1577,7 +1577,7 @@ export const startBot = (
   })
 
   bot.on("document", (ctx) => {
-    if (!isAuthorized(ctx.from, config.allowedUserId)) {
+    if (!isAuthorized(ctx.from, config.allowedUserIds)) {
       void ctx.reply("Not authorized.")
       return
     }

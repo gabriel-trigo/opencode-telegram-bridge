@@ -2,7 +2,7 @@ import { ConfigError, ConfigValidationError } from "./errors.js"
 
 export type BotConfig = {
   botToken: string
-  allowedUserId: number
+  allowedUserIds: number[]
   opencode: OpencodeConfig
   handlerTimeoutMs: number
   promptTimeoutMs: number
@@ -22,17 +22,42 @@ export type RestartCommandConfig = {
   timeoutMs: number
 }
 
-const parseAllowedUserId = (rawValue: string | undefined): number => {
-  if (!rawValue) {
-    throw new ConfigError("Missing TELEGRAM_ALLOWED_USER_ID")
+const parseAllowedUserIds = (env: NodeJS.ProcessEnv): number[] => {
+  const rawList = env.TELEGRAM_ALLOWED_USER_IDS
+  if (rawList != null && rawList.trim().length > 0) {
+    const parts = rawList
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+    if (parts.length === 0) {
+      throw new ConfigValidationError(
+        "TELEGRAM_ALLOWED_USER_IDS must include at least one integer",
+      )
+    }
+
+    const ids = parts.map((value) => Number(value))
+    if (ids.some((value) => !Number.isInteger(value))) {
+      throw new ConfigValidationError(
+        "TELEGRAM_ALLOWED_USER_IDS must be a comma-separated list of integers",
+      )
+    }
+
+    return ids
   }
 
-  const parsedValue = Number(rawValue)
+  const rawSingle = env.TELEGRAM_ALLOWED_USER_ID
+  if (!rawSingle) {
+    throw new ConfigError(
+      "Missing TELEGRAM_ALLOWED_USER_ID (or TELEGRAM_ALLOWED_USER_IDS)",
+    )
+  }
+
+  const parsedValue = Number(rawSingle)
   if (!Number.isInteger(parsedValue)) {
     throw new ConfigValidationError("TELEGRAM_ALLOWED_USER_ID must be an integer")
   }
 
-  return parsedValue
+  return [parsedValue]
 }
 
 const parseDurationMs = (
@@ -57,7 +82,7 @@ export const loadConfig = (): BotConfig => {
     throw new ConfigError("Missing TELEGRAM_BOT_TOKEN")
   }
 
-  const allowedUserId = parseAllowedUserId(process.env.TELEGRAM_ALLOWED_USER_ID)
+  const allowedUserIds = parseAllowedUserIds(process.env)
   const serverUrl = process.env.OPENCODE_SERVER_URL
   if (!serverUrl) {
     throw new ConfigError("Missing OPENCODE_SERVER_URL")
@@ -128,7 +153,7 @@ export const loadConfig = (): BotConfig => {
 
   const baseConfig: BotConfig = {
     botToken,
-    allowedUserId,
+    allowedUserIds,
     opencode,
     handlerTimeoutMs,
     promptTimeoutMs,

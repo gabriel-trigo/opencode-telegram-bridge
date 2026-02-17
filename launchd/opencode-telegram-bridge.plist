@@ -15,6 +15,8 @@
     <string>REPLACE_ME</string>
     <key>TELEGRAM_ALLOWED_USER_ID</key>
     <string>REPLACE_ME</string>
+    <key>TELEGRAM_ALLOWED_USER_IDS</key>
+    <string></string>
     <key>OPENCODE_SERVER_URL</key>
     <string>http://127.0.0.1:4096</string>
     <key>OPENCODE_SERVER_USERNAME</key>

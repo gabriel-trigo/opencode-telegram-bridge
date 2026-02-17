@@ -307,10 +307,32 @@ const runSystemdSetup = async () => {
   const opencodePath = installOpencode ? resolveOpencodePath() : null
 
   const botToken = await readSecret("TELEGRAM_BOT_TOKEN", { required: true })
-  const allowedUserId = await readAnswer("TELEGRAM_ALLOWED_USER_ID", {
-    required: true,
-  })
-  if (!Number.isInteger(Number(allowedUserId))) {
+  const allowedUserIdsRaw = await readAnswer("TELEGRAM_ALLOWED_USER_IDS", {})
+  const parseUserIds = (raw: string) => {
+    const parts = raw
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+    if (parts.length === 0) {
+      throw new CliValidationError(
+        "TELEGRAM_ALLOWED_USER_IDS must include at least one integer",
+      )
+    }
+    const ids = parts.map((value) => Number(value))
+    if (ids.some((value) => !Number.isInteger(value))) {
+      throw new CliValidationError(
+        "TELEGRAM_ALLOWED_USER_IDS must be a comma-separated list of integers",
+      )
+    }
+    return ids
+  }
+
+  const allowedUserIds = allowedUserIdsRaw.trim() ? parseUserIds(allowedUserIdsRaw) : null
+  const allowedUserId =
+    allowedUserIds === null
+      ? await readAnswer("TELEGRAM_ALLOWED_USER_ID", { required: true })
+      : null
+  if (allowedUserId !== null && !Number.isInteger(Number(allowedUserId))) {
     throw new CliValidationError("TELEGRAM_ALLOWED_USER_ID must be an integer")
   }
   const serverUrl = await readAnswer("OPENCODE_SERVER_URL", {
@@ -328,7 +350,9 @@ const runSystemdSetup = async () => {
   const { nodePath, cliPath } = resolveExecStart()
   writeEnvFile(envPath, {
     TELEGRAM_BOT_TOKEN: botToken,
-    TELEGRAM_ALLOWED_USER_ID: allowedUserId,
+    ...(allowedUserIds
+      ? { TELEGRAM_ALLOWED_USER_IDS: allowedUserIds.join(",") }
+      : { TELEGRAM_ALLOWED_USER_ID: allowedUserId ?? "" }),
     OPENCODE_SERVER_URL: serverUrl,
     OPENCODE_SERVER_USERNAME: serverUsername,
     OPENCODE_SERVER_PASSWORD: serverPassword,
@@ -436,10 +460,32 @@ const runLaunchdSetup = async () => {
   const opencodePath = installOpencode ? resolveOpencodePath() : null
 
   const botToken = await readSecret("TELEGRAM_BOT_TOKEN", { required: true })
-  const allowedUserId = await readAnswer("TELEGRAM_ALLOWED_USER_ID", {
-    required: true,
-  })
-  if (!Number.isInteger(Number(allowedUserId))) {
+  const allowedUserIdsRaw = await readAnswer("TELEGRAM_ALLOWED_USER_IDS", {})
+  const parseUserIds = (raw: string) => {
+    const parts = raw
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+    if (parts.length === 0) {
+      throw new CliValidationError(
+        "TELEGRAM_ALLOWED_USER_IDS must include at least one integer",
+      )
+    }
+    const ids = parts.map((value) => Number(value))
+    if (ids.some((value) => !Number.isInteger(value))) {
+      throw new CliValidationError(
+        "TELEGRAM_ALLOWED_USER_IDS must be a comma-separated list of integers",
+      )
+    }
+    return ids
+  }
+
+  const allowedUserIds = allowedUserIdsRaw.trim() ? parseUserIds(allowedUserIdsRaw) : null
+  const allowedUserId =
+    allowedUserIds === null
+      ? await readAnswer("TELEGRAM_ALLOWED_USER_ID", { required: true })
+      : null
+  if (allowedUserId !== null && !Number.isInteger(Number(allowedUserId))) {
     throw new CliValidationError("TELEGRAM_ALLOWED_USER_ID must be an integer")
   }
   const serverUrl = await readAnswer("OPENCODE_SERVER_URL", {
@@ -458,7 +504,9 @@ const runLaunchdSetup = async () => {
   const { nodePath, cliPath } = resolveExecStart()
   const envValues = {
     TELEGRAM_BOT_TOKEN: botToken,
-    TELEGRAM_ALLOWED_USER_ID: allowedUserId,
+    ...(allowedUserIds
+      ? { TELEGRAM_ALLOWED_USER_IDS: allowedUserIds.join(",") }
+      : { TELEGRAM_ALLOWED_USER_ID: allowedUserId ?? "" }),
     OPENCODE_SERVER_URL: serverUrl,
     OPENCODE_SERVER_USERNAME: serverUsername,
     OPENCODE_SERVER_PASSWORD: serverPassword,

@@ -3,11 +3,12 @@ import { describe, expect, it } from "vitest"
 import { formatUserLabel, isAuthorized } from "../src/bot-logic.js"
 
 describe("isAuthorized", () => {
-  it("authorizes only the allowed user id", () => {
-    expect(isAuthorized({ id: 10 }, 10)).toBe(true)
-    expect(isAuthorized({ id: 11 }, 10)).toBe(false)
-    expect(isAuthorized(undefined, 10)).toBe(false)
-    expect(isAuthorized({ username: "no-id" }, 10)).toBe(false)
+  it("authorizes only the allowlisted user ids", () => {
+    expect(isAuthorized({ id: 10 }, [10])).toBe(true)
+    expect(isAuthorized({ id: 11 }, [10])).toBe(false)
+    expect(isAuthorized({ id: 11 }, [10, 11])).toBe(true)
+    expect(isAuthorized(undefined, [10])).toBe(false)
+    expect(isAuthorized({ username: "no-id" }, [10])).toBe(false)
   })
 })
 

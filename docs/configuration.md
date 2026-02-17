@@ -5,7 +5,11 @@ Set these environment variables in your shell or service environment.
 ## Required
 - `TELEGRAM_BOT_TOKEN` - Telegram bot token.
 - `TELEGRAM_ALLOWED_USER_ID` - Telegram user ID allowed to use the bot.
+- `TELEGRAM_ALLOWED_USER_IDS` - Comma-separated list of Telegram user IDs allowed to use the bot.
 - `OPENCODE_SERVER_URL` - OpenCode server URL (default server is `http://127.0.0.1:4096`).
+
+You must set either `TELEGRAM_ALLOWED_USER_ID` (single user) or `TELEGRAM_ALLOWED_USER_IDS` (multiple users).
+If both are set, `TELEGRAM_ALLOWED_USER_IDS` takes precedence.
 
 ## Optional
 - `OPENCODE_SERVER_USERNAME` - Basic auth username (default: `opencode`).

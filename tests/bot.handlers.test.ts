@@ -249,7 +249,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -312,7 +312,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 10_000,
@@ -398,7 +398,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 10_000,
@@ -484,7 +484,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -570,7 +570,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -649,7 +649,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -720,7 +720,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -787,7 +787,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -887,7 +887,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -991,7 +991,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -1127,7 +1127,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -1237,7 +1237,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -1337,7 +1337,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -1423,7 +1423,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -1512,7 +1512,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 10_000,
@@ -1599,7 +1599,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -1669,7 +1669,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -1760,7 +1760,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -1808,7 +1808,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -1895,7 +1895,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2004,7 +2004,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2057,7 +2057,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2125,7 +2125,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2180,7 +2180,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2249,7 +2249,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2277,7 +2277,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2337,7 +2337,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2387,7 +2387,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2463,7 +2463,7 @@ describe("bot handler behavior", () => {
       startBot(
         {
           botToken: "token",
-          allowedUserId: 1,
+          allowedUserIds: [1],
           opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
           handlerTimeoutMs: 9999,
           promptTimeoutMs: 10_000,
@@ -2540,7 +2540,7 @@ describe("bot handler behavior", () => {
       startBot(
         {
           botToken: "token",
-          allowedUserId: 1,
+          allowedUserIds: [1],
           opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
           handlerTimeoutMs: 9999,
           promptTimeoutMs: 10_000,
@@ -2621,7 +2621,7 @@ describe("bot handler behavior", () => {
       startBot(
         {
           botToken: "token",
-          allowedUserId: 1,
+          allowedUserIds: [1],
           opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
           handlerTimeoutMs: 9999,
           promptTimeoutMs: 10_000,
@@ -2690,7 +2690,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2754,7 +2754,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2812,7 +2812,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2867,7 +2867,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2916,7 +2916,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -2978,7 +2978,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -3041,7 +3041,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
@@ -3138,7 +3138,7 @@ describe("bot handler behavior", () => {
     startBot(
       {
         botToken: "token",
-        allowedUserId: 1,
+        allowedUserIds: [1],
         opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
         handlerTimeoutMs: 9999,
         promptTimeoutMs: 1000,
