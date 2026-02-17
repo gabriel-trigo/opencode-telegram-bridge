@@ -148,7 +148,7 @@ const extractText = (parts: Part[]) => {
   return textParts.join("\n").trim()
 }
 
-const extractProviderError = (parts: Part[]): string | null => {
+const extractProviderErrorFromParts = (parts: Part[]): string | null => {
   const retries = parts.filter((part) => part.type === "retry") as Array<
     Part & {
       type: "retry"
@@ -164,6 +164,37 @@ const extractProviderError = (parts: Part[]): string | null => {
   const error = last?.error
   if (!error || typeof error !== "object") {
     return "OpenCode reported a provider error, but error details were missing."
+  }
+
+  const name = (error as { name?: unknown }).name
+  const data = (error as { data?: unknown }).data
+  const message =
+    data && typeof data === "object" ? (data as { message?: unknown }).message : undefined
+  const statusCode =
+    data && typeof data === "object" ? (data as { statusCode?: unknown }).statusCode : undefined
+
+  const baseMessage = typeof message === "string" && message.trim() ? message.trim() : null
+  if (!baseMessage) {
+    return typeof name === "string" && name.trim()
+      ? `OpenCode provider error: ${name}`
+      : "OpenCode reported a provider error, but error details were missing."
+  }
+
+  if (typeof statusCode === "number" && Number.isFinite(statusCode)) {
+    return `OpenCode provider error (${statusCode}): ${baseMessage}`
+  }
+
+  return `OpenCode provider error: ${baseMessage}`
+}
+
+const extractProviderErrorFromAssistantInfo = (info: unknown): string | null => {
+  if (!info || typeof info !== "object") {
+    return null
+  }
+
+  const error = (info as { error?: unknown }).error
+  if (!error || typeof error !== "object") {
+    return null
   }
 
   const name = (error as { name?: unknown }).name
@@ -424,13 +455,13 @@ export const createOpencodeBridge = (
       const response = requireData(responseResult, "session.prompt")
       const reply = extractText(response.parts)
       if (!reply) {
-        const providerError = extractProviderError(response.parts)
-        if (providerError) {
-          throw new OpencodeRequestError(providerError)
-        }
+        const providerError =
+          extractProviderErrorFromAssistantInfo(response.info) ??
+          extractProviderErrorFromParts(response.parts)
 
         throw new OpencodeRequestError(
-          "OpenCode returned no text output. This usually means the upstream provider failed; check the OpenCode server logs for details.",
+          providerError ??
+            "OpenCode returned no text output and did not include an error payload. This usually means the upstream provider failed; check the OpenCode server logs for details.",
         )
       }
 
