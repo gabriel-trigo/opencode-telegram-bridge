@@ -28,6 +28,7 @@ import {
 import {
   OpencodeModelCapabilityError,
   OpencodeModelModalitiesError,
+  OpencodeRequestError,
   ProjectAliasNotFoundError,
   ProjectConfigurationError,
   TelegramFileDownloadError,
@@ -79,7 +80,9 @@ type RestartResult =
 
 const execAsync = promisify(exec)
 
-export const toTelegrafInlineKeyboard = (spec: PermissionKeyboardSpec) => {
+export const toTelegrafInlineKeyboard = (
+  spec: PermissionKeyboardSpec,
+): ReturnType<typeof Markup.inlineKeyboard> => {
   const buttons = spec.buttons.map((button) =>
     Markup.button.callback(button.text, button.data),
   )
@@ -92,7 +95,7 @@ export const startBot = (
   projects: ProjectStore,
   chatProjects: ChatProjectStore,
   chatModels: ChatModelStore,
-) => {
+): Telegraf => {
   const bot = new Telegraf(config.botToken, {
     handlerTimeout: config.handlerTimeoutMs,
   })
@@ -838,13 +841,14 @@ export const startBot = (
           const isModelCapabilityError =
             error instanceof OpencodeModelCapabilityError ||
             error instanceof OpencodeModelModalitiesError
+          const isOpencodeRequestError = error instanceof OpencodeRequestError
           const hasMatchingMessage =
             error instanceof Error &&
             (error.message.includes("does not support image input") ||
               error.message.includes("does not support PDF input") ||
               error.message.includes("does not expose modalities"))
           const message =
-            isModelCapabilityError || hasMatchingMessage
+            isModelCapabilityError || isOpencodeRequestError || hasMatchingMessage
               ? (error as Error).message
               : "OpenCode error. Check server logs."
           await sendReply(chatId, replyToMessageId, message)

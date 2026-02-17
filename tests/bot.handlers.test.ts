@@ -2721,6 +2721,22 @@ describe("bot handler behavior", () => {
       "OpenCode error. Check server logs.",
       expect.anything(),
     )
+
+    opencode.promptFromChat.mockRejectedValueOnce(
+      // Importing the real error class here would force a module reload of bot.ts.
+      // This mimics the runtime shape we care about (instanceof BridgeError).
+      new (await import("../src/errors.js")).OpencodeRequestError(
+        "Upstream provider error: insufficient credits",
+      ),
+    )
+    const providerError = createTextCtx({ userId: 1, chatId: 10, text: "hello" })
+    await bot.dispatchOn("text", providerError)
+    await flushMicrotasks()
+    expect(state.lastBot!.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      "Upstream provider error: insufficient credits",
+      expect.anything(),
+    )
   })
 
   it("sendReply splits long replies into multiple Telegram messages", async () => {
