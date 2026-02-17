@@ -1,5 +1,15 @@
 # opencode-telegram-bridge
 
+## 1.8.0
+
+### Minor Changes
+
+- abacbf7: Support multiple Telegram allowlisted users via `TELEGRAM_ALLOWED_USER_IDS`.
+
+### Patch Changes
+
+- 38a3c14: Support running the bridge under Bun by using `bun:sqlite` instead of `better-sqlite3` when on the Bun runtime.
+
 ## 1.7.0
 
 ### Minor Changes
