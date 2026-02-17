@@ -66,6 +66,7 @@ When new commands are added or changed, update this list and the command descrip
 ## Useful commands
 - Install dependencies: `npm install`
 - Install docs site deps: `pip install mkdocs-material`
+- Bun smoke test (sqlite stores): `~/.bun/bin/bun scripts/bun-smoke.ts`
 - Run setup wizard: `opencode-telegram-bridge setup`
 - Start dev bot (watch mode): `npm run dev`
 - Build: `npm run build`
