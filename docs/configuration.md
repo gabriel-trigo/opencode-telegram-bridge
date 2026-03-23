@@ -16,6 +16,7 @@ If both are set, `TELEGRAM_ALLOWED_USER_IDS` takes precedence.
 - `OPENCODE_SERVER_PASSWORD` - Basic auth password.
 - `OPENCODE_PROMPT_TIMEOUT_MS` - Prompt timeout in milliseconds (default: 600000).
 - `TELEGRAM_HANDLER_TIMEOUT_MS` - Telegraf handler timeout in milliseconds (default: prompt timeout + 30000).
+- `LOG_LEVEL` - Minimum log level to emit (`trace`, `debug`, `info`, `warn`, `error`, `fatal`; default: `info`).
 - `OPENCODE_RESTART_COMMAND` - Command to restart OpenCode when `/reboot` is used (example: `systemctl --user restart opencode --no-block` or `launchctl kickstart -k gui/$UID/com.opencode.server`).
 - `OPENCODE_RESTART_TIMEOUT_MS` - Restart command timeout in milliseconds (default: 30000).
 - `OPENCODE_BRIDGE_RESTART_COMMAND` - Command to restart the Telegram bridge when `/restart` is used (example: `systemctl --user restart opencode-telegram-bridge --no-block` or `launchctl kickstart -k gui/$UID/com.opencode.telegram-bridge`).

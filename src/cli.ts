@@ -358,6 +358,7 @@ const runSystemdSetup = async () => {
     OPENCODE_SERVER_PASSWORD: serverPassword,
     OPENCODE_PROMPT_TIMEOUT_MS: "600000",
     TELEGRAM_HANDLER_TIMEOUT_MS: "630000",
+    LOG_LEVEL: "info",
     OPENCODE_RESTART_COMMAND: opencodeRestartCommand,
     OPENCODE_RESTART_TIMEOUT_MS: opencodeRestartTimeoutMs,
     OPENCODE_BRIDGE_RESTART_COMMAND:
@@ -512,6 +513,7 @@ const runLaunchdSetup = async () => {
     OPENCODE_SERVER_PASSWORD: serverPassword,
     OPENCODE_PROMPT_TIMEOUT_MS: "600000",
     TELEGRAM_HANDLER_TIMEOUT_MS: "630000",
+    LOG_LEVEL: "info",
     OPENCODE_RESTART_COMMAND: opencodeRestartCommand,
     OPENCODE_RESTART_TIMEOUT_MS: opencodeRestartTimeoutMs,
     OPENCODE_BRIDGE_RESTART_COMMAND: bridgeRestartCommand,
