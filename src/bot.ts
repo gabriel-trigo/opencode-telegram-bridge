@@ -16,6 +16,7 @@ import { createPromptGuard } from "./prompt-guard.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
 import type { ChatModelStore, ChatProjectStore } from "./state.js"
 import { splitTelegramMessage } from "./telegram.js"
+import { logger } from "./logger.js"
 import {
   DEFAULT_MAX_IMAGE_BYTES,
   TelegramImageTooLargeError,
@@ -118,13 +119,13 @@ export const startBot = (
     context: Record<string, unknown> = {},
   ) => {
     const payload = {
-      ts: new Date().toISOString(),
       event,
       ...context,
     }
 
-    // One JSON object per line makes post-mortem analysis easier.
-    console[level](JSON.stringify(payload))
+    const resolvedLevel =
+      level === "log" ? "info" : level
+    logger[resolvedLevel](payload)
   }
   /*
    * Telegraf wraps each update handler in a timeout. When that timeout fires,
@@ -152,7 +153,7 @@ export const startBot = (
         await bot.telegram.sendMessage(chatId, chunk, replyParameters)
       }
     } catch (error) {
-      console.error("Failed to send Telegram reply", error)
+      logger.error({ error: serializeError(error) }, "Failed to send Telegram reply")
     }
   }
 
@@ -304,7 +305,7 @@ export const startBot = (
       try {
         await opencode.rejectQuestion(pending.request.id, pending.directory)
       } catch (error) {
-        console.error("Failed to reject question", error)
+        logger.error({ error: serializeError(error) }, "Failed to reject question")
       }
     }
 
@@ -317,7 +318,10 @@ export const startBot = (
           `${buildQuestionPromptText(pending)}\n\nStatus: ${options.reason}`,
         )
       } catch (error) {
-        console.error("Failed to update question status message", error)
+        logger.error(
+          { error: serializeError(error) },
+          "Failed to update question status message",
+        )
       }
     }
   }
@@ -365,7 +369,10 @@ export const startBot = (
         `${buildQuestionPromptText(pending)}\n\nStatus: Answer sent to OpenCode. Waiting for response...`,
       )
     } catch (error) {
-      console.error("Failed to update question completion message", error)
+      logger.error(
+        { error: serializeError(error) },
+        "Failed to update question completion message",
+      )
     }
   }
 
@@ -405,7 +412,7 @@ export const startBot = (
     try {
       await advanceQuestionOrSubmit(pending)
     } catch (error) {
-      console.error("Failed to reply to question", error)
+      logger.error({ error: serializeError(error) }, "Failed to reply to question")
       await sendReply(chatId, replyToMessageId, "Failed to send answer to OpenCode.")
     }
 
@@ -485,10 +492,10 @@ export const startBot = (
     onPermissionAsked: async ({ request, directory }) => {
       const owner = opencode.getSessionOwner(request.sessionID)
       if (!owner) {
-        console.warn("Permission request for unknown session", {
+        logger.warn({
           sessionId: request.sessionID,
           requestId: request.id,
-        })
+        }, "Permission request for unknown session")
         return
       }
 
@@ -507,30 +514,30 @@ export const startBot = (
           summary,
         })
       } catch (error) {
-        console.error("Failed to send permission request", error)
+        logger.error({ error: serializeError(error) }, "Failed to send permission request")
       }
     },
     onQuestionAsked: async ({ request, directory }) => {
       const owner = opencode.getSessionOwner(request.sessionID)
       if (!owner) {
-        console.warn("Question request for unknown session", {
+        logger.warn({
           sessionId: request.sessionID,
           requestId: request.id,
-        })
+        }, "Question request for unknown session")
         return
       }
 
       const existing = getPendingQuestionForChat(owner.chatId)
       if (existing) {
-        console.warn("Question request while another question is pending", {
+        logger.warn({
           chatId: owner.chatId,
           requestId: request.id,
           existingRequestId: existing.request.id,
-        })
+        }, "Question request while another question is pending")
         try {
           await opencode.rejectQuestion(request.id, directory)
         } catch (error) {
-          console.error("Failed to reject unexpected question", error)
+          logger.error({ error: serializeError(error) }, "Failed to reject unexpected question")
         }
         return
       }
@@ -553,11 +560,11 @@ export const startBot = (
         pendingQuestions.set(request.id, pending)
         pendingQuestionsByChat.set(owner.chatId, request.id)
       } catch (error) {
-        console.error("Failed to send question request", error)
+        logger.error({ error: serializeError(error) }, "Failed to send question request")
       }
     },
     onError: (error: unknown) => {
-      console.error("OpenCode event stream error", error)
+      logger.error({ error: serializeError(error) }, "OpenCode event stream error")
     },
   })
 
@@ -590,7 +597,7 @@ export const startBot = (
     const chatId = ctx.chat?.id
     const replyToMessageId = ctx.message?.message_id
     if (!chatId) {
-      console.warn("Missing chat id for incoming message", { userLabel })
+      logger.warn({ userLabel }, "Missing chat id for incoming message")
       void ctx.reply("Missing chat context.")
       return
     }
@@ -885,7 +892,7 @@ export const startBot = (
 
     const chatId = ctx.chat?.id
     if (!chatId) {
-      console.warn("Missing chat id for incoming project command")
+      logger.warn("Missing chat id for incoming project command")
       await ctx.reply("Missing chat context.")
       return
     }
@@ -964,7 +971,7 @@ export const startBot = (
         }
       }
     } catch (error) {
-      console.error("Failed to handle /project command", error)
+      logger.error({ error: serializeError(error) }, "Failed to handle /project command")
       const message =
         error instanceof Error
           ? error.message
@@ -981,7 +988,7 @@ export const startBot = (
 
     const chatId = ctx.chat?.id
     if (!chatId) {
-      console.warn("Missing chat id for incoming model command")
+      logger.warn("Missing chat id for incoming model command")
       await ctx.reply("Missing chat context.")
       return
     }
@@ -989,7 +996,7 @@ export const startBot = (
     const activeAlias = getChatProjectAlias(chatId)
     const project = projects.getProject(activeAlias)
     if (!project) {
-      console.error("Missing project for chat", { chatId, activeAlias })
+      logger.error({ chatId, activeAlias }, "Missing project for chat")
       await ctx.reply("Missing project configuration.")
       return
     }
@@ -1054,7 +1061,7 @@ export const startBot = (
             chatModels.setModel(chatId, project.path, { providerID, modelID })
             await ctx.reply(`Current model set to ${providerID}/${modelID}.`)
           } catch (error) {
-            console.error("Failed to set model", error)
+            logger.error({ error: serializeError(error) }, "Failed to set model")
             await ctx.reply(
               "Unexpected error when changing model. Check server logs.",
             )
@@ -1066,7 +1073,7 @@ export const startBot = (
         }
       }
     } catch (error) {
-      console.error("Failed to handle /model command", error)
+      logger.error({ error: serializeError(error) }, "Failed to handle /model command")
       const message =
         error instanceof Error
           ? error.message
@@ -1110,7 +1117,7 @@ export const startBot = (
 
     const chatId = ctx.chat?.id
     if (!chatId) {
-      console.warn("Missing chat id for incoming status command")
+      logger.warn("Missing chat id for incoming status command")
       await ctx.reply("Missing chat context.")
       return
     }
@@ -1119,7 +1126,7 @@ export const startBot = (
     try {
       project = getProjectForChat(chatId)
     } catch (error) {
-      console.error("Missing project for chat", { chatId, error })
+      logger.error({ chatId, error: serializeError(error) }, "Missing project for chat")
       await ctx.reply("Missing project configuration.")
       return
     }
@@ -1142,7 +1149,10 @@ export const startBot = (
     try {
       stats = await opencode.getLatestAssistantStats(sessionId, project.path)
     } catch (error) {
-      console.error("Failed to fetch session messages for /status", error)
+      logger.error(
+        { error: serializeError(error) },
+        "Failed to fetch session messages for /status",
+      )
     }
 
     const model = storedModel ?? stats?.model ?? null
@@ -1156,7 +1166,7 @@ export const startBot = (
           model,
         )
       } catch (error) {
-        console.error("Failed to fetch providers for /status", error)
+        logger.error({ error: serializeError(error) }, "Failed to fetch providers for /status")
       }
     }
 
@@ -1178,7 +1188,7 @@ export const startBot = (
 
     const chatId = ctx.chat?.id
     if (!chatId) {
-      console.warn("Missing chat id for incoming reset command")
+      logger.warn("Missing chat id for incoming reset command")
       await ctx.reply("Missing chat context.")
       return
     }
@@ -1186,7 +1196,7 @@ export const startBot = (
     const activeAlias = getChatProjectAlias(chatId)
     const project = projects.getProject(activeAlias)
     if (!project) {
-      console.error("Missing project for chat", { chatId, activeAlias })
+      logger.error({ chatId, activeAlias }, "Missing project for chat")
       await ctx.reply("Missing project configuration.")
       return
     }
@@ -1209,7 +1219,7 @@ export const startBot = (
 
     const chatId = ctx.chat?.id
     if (!chatId) {
-      console.warn("Missing chat id for incoming abort command")
+      logger.warn("Missing chat id for incoming abort command")
       await ctx.reply("Missing chat context.")
       return
     }
@@ -1217,7 +1227,7 @@ export const startBot = (
     const activeAlias = getChatProjectAlias(chatId)
     const project = projects.getProject(activeAlias)
     if (!project) {
-      console.error("Missing project for chat", { chatId, activeAlias })
+      logger.error({ chatId, activeAlias }, "Missing project for chat")
       await ctx.reply("Missing project configuration.")
       return
     }
@@ -1240,7 +1250,7 @@ export const startBot = (
       try {
         await opencode.abortSession(aborted.sessionId, project.path)
       } catch (error) {
-        console.error("Failed to abort OpenCode session", error)
+        logger.error({ error: serializeError(error) }, "Failed to abort OpenCode session")
       }
     }
   })
@@ -1260,7 +1270,7 @@ export const startBot = (
     }
 
     if (result.error) {
-      console.error("Failed to restart OpenCode", result.error)
+      logger.error({ error: serializeError(result.error) }, "Failed to restart OpenCode")
       const stderr = result.stderr
       const errorMessage = formatCommandOutput(result.error.message)
       const detail = stderr ?? errorMessage
@@ -1277,7 +1287,7 @@ export const startBot = (
     chatModels.clearAll()
 
     if (result.stderr) {
-      console.warn("OpenCode restart stderr", { stderr: result.stderr })
+      logger.warn({ stderr: result.stderr }, "OpenCode restart stderr")
     }
 
     const stdout = result.stdout
@@ -1309,7 +1319,10 @@ export const startBot = (
     }
 
     if (result.error) {
-      console.error("Failed to restart opencode-telegram-bridge", result.error)
+      logger.error(
+        { error: serializeError(result.error) },
+        "Failed to restart opencode-telegram-bridge",
+      )
       const stderr = result.stderr
       const errorMessage = formatCommandOutput(result.error.message)
       const detail = stderr ?? errorMessage
@@ -1319,7 +1332,7 @@ export const startBot = (
     }
 
     if (result.stderr) {
-      console.warn("Bridge restart stderr", { stderr: result.stderr })
+      logger.warn({ stderr: result.stderr }, "Bridge restart stderr")
     }
   })
 
@@ -1368,7 +1381,7 @@ export const startBot = (
         )
         await ctx.answerCbQuery("Response sent.")
       } catch (error) {
-        console.error("Failed to reply to permission", error)
+        logger.error({ error: serializeError(error) }, "Failed to reply to permission")
         await ctx.answerCbQuery("Failed to send response.")
       }
       return
@@ -1394,7 +1407,7 @@ export const startBot = (
       try {
         await opencode.rejectQuestion(pending.request.id, pending.directory)
       } catch (error) {
-        console.error("Failed to reject question", error)
+        logger.error({ error: serializeError(error) }, "Failed to reject question")
       }
 
       deletePendingQuestion(pending)
@@ -1406,7 +1419,10 @@ export const startBot = (
           `${buildQuestionPromptText(pending)}\n\nStatus: Cancelled`,
         )
       } catch (error) {
-        console.error("Failed to update cancelled question message", error)
+        logger.error(
+          { error: serializeError(error) },
+          "Failed to update cancelled question message",
+        )
       }
 
       await ctx.answerCbQuery("Cancelled.")
@@ -1451,7 +1467,7 @@ export const startBot = (
           await updateQuestionMessage(pending)
           await ctx.answerCbQuery("Updated.")
         } catch (error) {
-          console.error("Failed to update question message", error)
+          logger.error({ error: serializeError(error) }, "Failed to update question message")
           await ctx.answerCbQuery("Failed to update.")
         }
         return
@@ -1462,7 +1478,7 @@ export const startBot = (
         await advanceQuestionOrSubmit(pending)
         await ctx.answerCbQuery("Selected.")
       } catch (error) {
-        console.error("Failed to submit question answer", error)
+        logger.error({ error: serializeError(error) }, "Failed to submit question answer")
         await ctx.answerCbQuery("Failed to send answer.")
       }
       return
@@ -1489,7 +1505,7 @@ export const startBot = (
         await advanceQuestionOrSubmit(pending)
         await ctx.answerCbQuery("Sent.")
       } catch (error) {
-        console.error("Failed to submit question answer", error)
+        logger.error({ error: serializeError(error) }, "Failed to submit question answer")
         await ctx.answerCbQuery("Failed to send answer.")
       }
     }
@@ -1508,7 +1524,7 @@ export const startBot = (
     const text = ctx.message.text
     const userLabel = formatUserLabel(ctx.from)
 
-    console.log(`[telegram] ${userLabel}: ${text}`)
+    logger.info({ userLabel, text }, "Incoming Telegram text message")
 
     const chatId = ctx.chat?.id
     const replyToMessageId = ctx.message?.message_id
@@ -1651,21 +1667,21 @@ export const startBot = (
   })
 
   bot.catch((error, ctx) => {
-    console.error("Telegram bot error", {
-      error,
+    logger.error({
+      error: serializeError(error),
       updateId: ctx.update.update_id,
-    })
+    }, "Telegram bot error")
   })
 
   bot.launch()
   const commands = buildBotCommands()
   void bot.telegram
     .setMyCommands(commands)
-    .catch((error) => console.error("Failed to set bot commands", error))
+    .catch((error) => logger.error({ error: serializeError(error) }, "Failed to set bot commands"))
   void bot.telegram
     .setMyCommands(commands, { scope: { type: "all_private_chats" } })
     .catch((error) =>
-      console.error("Failed to set private chat commands", error),
+      logger.error({ error: serializeError(error) }, "Failed to set private chat commands"),
     )
   return bot
 }
