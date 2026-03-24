@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.8.2
+
+### Patch Changes
+
+- c327b4d: Add structured runtime logging with configurable level and stream routing.
+
 ## 1.8.1
 
 ### Patch Changes
