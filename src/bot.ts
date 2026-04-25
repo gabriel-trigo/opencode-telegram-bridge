@@ -120,6 +120,51 @@ export const startBot = (
     return { message: String(error) }
   }
 
+  const summarizeEventPayload = (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      return null
+    }
+
+    const properties = (payload as { properties?: unknown }).properties
+    if (!properties || typeof properties !== "object") {
+      return null
+    }
+
+    const summary: Record<string, unknown> = {}
+    const sessionId = (properties as { sessionID?: unknown }).sessionID
+    const messageId = (properties as { messageID?: unknown }).messageID
+    const requestId = (properties as { id?: unknown }).id
+    if (typeof sessionId === "string") {
+      summary.sessionId = sessionId
+    }
+    if (typeof messageId === "string") {
+      summary.messageId = messageId
+    }
+    if (typeof requestId === "string") {
+      summary.requestId = requestId
+    }
+
+    const part = (properties as { part?: unknown }).part
+    if (part && typeof part === "object") {
+      const tool = (part as { tool?: unknown }).tool
+      const callId = (part as { callID?: unknown }).callID
+      const state = (part as { state?: unknown }).state
+      const status =
+        state && typeof state === "object" ? (state as { status?: unknown }).status : undefined
+      if (typeof tool === "string") {
+        summary.tool = tool
+      }
+      if (typeof callId === "string") {
+        summary.callId = callId
+      }
+      if (typeof status === "string") {
+        summary.status = status
+      }
+    }
+
+    return Object.keys(summary).length > 0 ? summary : null
+  }
+
   const logEvent = (
     level: "log" | "warn" | "error",
     event: string,
@@ -222,6 +267,34 @@ export const startBot = (
     return truncate(raw, maxLength)
   }
 
+  const findFileHint = (input: unknown): string | null => {
+    if (!input || typeof input !== "object") {
+      return null
+    }
+
+    const inputRecord = input as Record<string, unknown>
+    const fileFields = ["filePath", "path", "savePath", "filename"]
+    for (const field of fileFields) {
+      const value = inputRecord[field]
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value.trim()
+      }
+    }
+
+    const args = inputRecord.args
+    if (args && typeof args === "object") {
+      const argsRecord = args as Record<string, unknown>
+      for (const field of fileFields) {
+        const value = argsRecord[field]
+        if (typeof value === "string" && value.trim().length > 0) {
+          return value.trim()
+        }
+      }
+    }
+
+    return null
+  }
+
   const renderToolCallStatus = (part: ToolCallPart) => {
     const state = part.state
     const lines = [
@@ -231,15 +304,23 @@ export const startBot = (
       `Call ID: ${part.callID}`,
     ]
 
-    const inputPreview = toCompactJson(state.input, 900)
-    if (inputPreview) {
-      lines.push("", "Input:", inputPreview)
+    const fileHint = findFileHint(state.input)
+    if (fileHint) {
+      lines.push(`File: ${fileHint}`)
     }
 
-    if (state.status === "completed") {
-      const outputPreview = toCompactJson(state.output, 1400)
-      if (outputPreview) {
-        lines.push("", "Output:", outputPreview)
+    const command =
+      state.input && typeof state.input === "object"
+        ? (state.input as { command?: unknown }).command
+        : undefined
+    if (typeof command === "string" && command.trim().length > 0) {
+      lines.push(`Command: ${truncate(command.trim(), 200)}`)
+    }
+
+    if (state.status === "pending" || state.status === "running") {
+      const inputPreview = toCompactJson(state.input, 240)
+      if (inputPreview && !fileHint && typeof command !== "string") {
+        lines.push(`Input: ${inputPreview}`)
       }
     }
 
@@ -709,6 +790,17 @@ export const startBot = (
       } catch (error) {
         logger.error({ error: serializeError(error) }, "Failed to send tool call status update")
       }
+    },
+    onEvent: ({ type, directory, payload }) => {
+      const summary = summarizeEventPayload(payload)
+      logger.debug(
+        {
+          eventType: type,
+          directory,
+          ...(summary ?? {}),
+        },
+        "OpenCode stream event",
+      )
     },
     onError: (error: unknown) => {
       logger.error({ error: serializeError(error) }, "OpenCode event stream error")
