@@ -122,6 +122,8 @@ export type PermissionEventHandlers = {
 
 export type QuestionAnswers = Array<Array<string>>
 
+export type ToolCallPart = Extract<Part, { type: "tool" }>
+
 export type EventStreamHandlers = {
   onPermissionAsked?: (event: {
     request: PermissionRequest
@@ -129,6 +131,10 @@ export type EventStreamHandlers = {
   }) => void | Promise<void>
   onQuestionAsked?: (event: {
     request: QuestionRequest
+    directory: string
+  }) => void | Promise<void>
+  onToolCallUpdated?: (event: {
+    part: ToolCallPart
     directory: string
   }) => void | Promise<void>
   onError?: (error: unknown) => void
@@ -608,7 +614,7 @@ export const createOpencodeBridge = (
       const responseResult = await client.question.reject(parameters)
       return requireData(responseResult, "question.reject")
     },
-    startEventStream({ onPermissionAsked, onQuestionAsked, onError }) {
+    startEventStream({ onPermissionAsked, onQuestionAsked, onToolCallUpdated, onError }) {
       const abortController = new AbortController()
 
       const run = async () => {
@@ -648,6 +654,25 @@ export const createOpencodeBridge = (
                     directory: (event as GlobalEvent).directory,
                   }),
                 )
+                continue
+              }
+
+              if (payload?.type === "message.part.updated") {
+                const partEvent = payload as {
+                  type: "message.part.updated"
+                  properties: {
+                    part?: Part
+                  }
+                }
+                const part = partEvent.properties?.part
+                if (part?.type === "tool") {
+                  await Promise.resolve(
+                    onToolCallUpdated?.({
+                      part: part as ToolCallPart,
+                      directory: (event as GlobalEvent).directory,
+                    }),
+                  )
+                }
               }
             }
           } catch (error) {

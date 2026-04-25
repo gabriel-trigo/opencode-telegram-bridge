@@ -3113,6 +3113,288 @@ describe("bot handler behavior", () => {
     expect(bot.telegram.sendMessage).not.toHaveBeenCalled()
   })
 
+  it("tool call updates are ignored for unknown session owner", async () => {
+    const eventHandlers: { onToolCallUpdated?: any } = {}
+
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startEventStream: vi.fn((handlers: any) => {
+        eventHandlers.onToolCallUpdated = handlers.onToolCallUpdated
+        return { stop: () => undefined }
+      }),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserIds: [1],
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+
+    await eventHandlers.onToolCallUpdated({
+      part: {
+        id: "prt-1",
+        sessionID: "session-unknown",
+        messageID: "message-1",
+        type: "tool",
+        callID: "call-1",
+        tool: "read",
+        state: { status: "pending", input: { filePath: "README.md" }, raw: "x" },
+      },
+      directory: "/home/user",
+    })
+
+    expect(bot.telegram.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it("tool call updates create one message and dedupe identical edits", async () => {
+    const eventHandlers: { onToolCallUpdated?: any } = {}
+
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startEventStream: vi.fn((handlers: any) => {
+        eventHandlers.onToolCallUpdated = handlers.onToolCallUpdated
+        return { stop: () => undefined }
+      }),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserIds: [1],
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+    bot.telegram.sendMessage.mockResolvedValueOnce({ message_id: 500 })
+
+    await eventHandlers.onToolCallUpdated({
+      part: {
+        id: "prt-1",
+        sessionID: "session-1",
+        messageID: "message-1",
+        type: "tool",
+        callID: "call-1",
+        tool: "read",
+        state: { status: "pending", input: { filePath: "README.md" }, raw: "x" },
+      },
+      directory: "/home/user",
+    })
+
+    await eventHandlers.onToolCallUpdated({
+      part: {
+        id: "prt-1",
+        sessionID: "session-1",
+        messageID: "message-1",
+        type: "tool",
+        callID: "call-1",
+        tool: "read",
+        state: {
+          status: "running",
+          input: { filePath: "README.md" },
+          time: { start: 100 },
+        },
+      },
+      directory: "/home/user",
+    })
+
+    await eventHandlers.onToolCallUpdated({
+      part: {
+        id: "prt-1",
+        sessionID: "session-1",
+        messageID: "message-1",
+        type: "tool",
+        callID: "call-1",
+        tool: "read",
+        state: {
+          status: "running",
+          input: { filePath: "README.md" },
+          time: { start: 100 },
+        },
+      },
+      directory: "/home/user",
+    })
+
+    expect(bot.telegram.sendMessage).toHaveBeenCalledTimes(1)
+    expect(bot.telegram.editMessageText).toHaveBeenCalledTimes(1)
+    expect(bot.telegram.editMessageText).toHaveBeenCalledWith(
+      10,
+      500,
+      undefined,
+      expect.stringContaining("Status: running"),
+    )
+  })
+
+  it("tool call update falls back to reply message when edit fails", async () => {
+    const eventHandlers: { onToolCallUpdated?: any } = {}
+
+    const opencode = {
+      promptFromChat: vi.fn(async () => ({ reply: "hi", model: null })),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => ({ chatId: 10, projectDir: "/home/user" })),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startEventStream: vi.fn((handlers: any) => {
+        eventHandlers.onToolCallUpdated = handlers.onToolCallUpdated
+        return { stop: () => undefined }
+      }),
+    }
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const { startBot } = await import("../src/bot.js")
+    startBot(
+      {
+        botToken: "token",
+        allowedUserIds: [1],
+        opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+        handlerTimeoutMs: 9999,
+        promptTimeoutMs: 1000,
+      },
+      opencode as any,
+      projects as any,
+      chatProjects as any,
+      chatModels as any,
+    )
+
+    const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+    const bot = state.lastBot!
+    bot.telegram.sendMessage
+      .mockResolvedValueOnce({ message_id: 700 })
+      .mockResolvedValueOnce({ message_id: 701 })
+    bot.telegram.editMessageText
+      .mockRejectedValueOnce(new Error("edit failed"))
+      .mockResolvedValueOnce(undefined)
+
+    await eventHandlers.onToolCallUpdated({
+      part: {
+        id: "prt-1",
+        sessionID: "session-1",
+        messageID: "message-1",
+        type: "tool",
+        callID: "call-1",
+        tool: "read",
+        state: { status: "pending", input: { filePath: "README.md" }, raw: "x" },
+      },
+      directory: "/home/user",
+    })
+
+    await eventHandlers.onToolCallUpdated({
+      part: {
+        id: "prt-1",
+        sessionID: "session-1",
+        messageID: "message-1",
+        type: "tool",
+        callID: "call-1",
+        tool: "read",
+        state: {
+          status: "running",
+          input: { filePath: "README.md" },
+          time: { start: 100 },
+        },
+      },
+      directory: "/home/user",
+    })
+
+    await eventHandlers.onToolCallUpdated({
+      part: {
+        id: "prt-1",
+        sessionID: "session-1",
+        messageID: "message-1",
+        type: "tool",
+        callID: "call-1",
+        tool: "read",
+        state: {
+          status: "completed",
+          input: { filePath: "README.md" },
+          output: "ok",
+          title: "Read",
+          metadata: {},
+          time: { start: 100, end: 120 },
+        },
+      },
+      directory: "/home/user",
+    })
+
+    expect(bot.telegram.sendMessage).toHaveBeenNthCalledWith(2, 10, expect.any(String), {
+      reply_parameters: { message_id: 700 },
+    })
+    expect(bot.telegram.editMessageText).toHaveBeenLastCalledWith(
+      10,
+      701,
+      undefined,
+      expect.stringContaining("Status: completed"),
+    )
+  })
+
   it("callback_query errors: unauthorized / request missing / reply failure", async () => {
     const permissionHandlers: { onPermissionAsked?: any } = {}
 

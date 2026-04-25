@@ -11,6 +11,7 @@ import type {
   OpencodeBridge,
   PermissionReply,
   PromptInput,
+  ToolCallPart,
 } from "./opencode.js"
 import { createPromptGuard } from "./prompt-guard.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
@@ -79,6 +80,12 @@ type RestartResult =
       error?: Error
     }
 
+type ToolCallStatusMessage = {
+  chatId: number
+  messageId: number
+  lastRenderedText: string
+}
+
 const execAsync = promisify(exec)
 
 export const toTelegrafInlineKeyboard = (
@@ -137,6 +144,7 @@ export const startBot = (
   const pendingPermissions = new Map<string, PendingPermission>()
   const pendingQuestions = new Map<string, PendingQuestion>()
   const pendingQuestionsByChat = new Map<number, string>()
+  const toolCallMessages = new Map<string, ToolCallStatusMessage>()
 
   const sendReply = async (
     chatId: number,
@@ -189,6 +197,108 @@ export const startBot = (
       "[user_message]",
       text,
     ].join("\n")
+  }
+
+  const buildToolCallKey = (part: ToolCallPart) =>
+    `${part.sessionID}\u0000${part.messageID}\u0000${part.callID}`
+
+  const toCompactJson = (value: unknown, maxLength: number) => {
+    if (value == null) {
+      return ""
+    }
+
+    const raw = (() => {
+      if (typeof value === "string") {
+        return value
+      }
+
+      try {
+        return JSON.stringify(value)
+      } catch {
+        return String(value)
+      }
+    })()
+
+    return truncate(raw, maxLength)
+  }
+
+  const renderToolCallStatus = (part: ToolCallPart) => {
+    const state = part.state
+    const lines = [
+      "OpenCode tool call",
+      `Tool: ${part.tool}`,
+      `Status: ${state.status}`,
+      `Call ID: ${part.callID}`,
+    ]
+
+    const inputPreview = toCompactJson(state.input, 900)
+    if (inputPreview) {
+      lines.push("", "Input:", inputPreview)
+    }
+
+    if (state.status === "completed") {
+      const outputPreview = toCompactJson(state.output, 1400)
+      if (outputPreview) {
+        lines.push("", "Output:", outputPreview)
+      }
+    }
+
+    if (state.status === "error") {
+      const errorText = truncate(state.error, 1400)
+      lines.push("", "Error:", errorText)
+    }
+
+    return truncate(lines.join("\n"), 3800)
+  }
+
+  const upsertToolCallStatusMessage = async (part: ToolCallPart, chatId: number) => {
+    const key = buildToolCallKey(part)
+    const rendered = renderToolCallStatus(part)
+    const existing = toolCallMessages.get(key)
+
+    if (!existing) {
+      const message = await bot.telegram.sendMessage(chatId, rendered)
+      toolCallMessages.set(key, {
+        chatId,
+        messageId: message.message_id,
+        lastRenderedText: rendered,
+      })
+      return
+    }
+
+    if (existing.lastRenderedText === rendered) {
+      return
+    }
+
+    try {
+      await bot.telegram.editMessageText(chatId, existing.messageId, undefined, rendered)
+      toolCallMessages.set(key, {
+        chatId,
+        messageId: existing.messageId,
+        lastRenderedText: rendered,
+      })
+      return
+    } catch (error) {
+      logger.warn(
+        {
+          error: serializeError(error),
+          chatId,
+          messageId: existing.messageId,
+          callId: part.callID,
+          sessionId: part.sessionID,
+        },
+        "Failed to edit tool status message; sending fallback reply",
+      )
+    }
+
+    const message = await bot.telegram.sendMessage(chatId, rendered, {
+      reply_parameters: { message_id: existing.messageId },
+    })
+    toolCallMessages.set(key, {
+      chatId,
+      messageId: message.message_id,
+      lastRenderedText: rendered,
+    })
   }
 
   const buildQuestionPromptText = (pending: PendingQuestion) => {
@@ -578,6 +688,26 @@ export const startBot = (
         pendingQuestionsByChat.set(owner.chatId, request.id)
       } catch (error) {
         logger.error({ error: serializeError(error) }, "Failed to send question request")
+      }
+    },
+    onToolCallUpdated: async ({ part }) => {
+      const owner = opencode.getSessionOwner(part.sessionID)
+      if (!owner) {
+        logger.warn(
+          {
+            sessionId: part.sessionID,
+            messageId: part.messageID,
+            callId: part.callID,
+          },
+          "Tool call update for unknown session",
+        )
+        return
+      }
+
+      try {
+        await upsertToolCallStatusMessage(part, owner.chatId)
+      } catch (error) {
+        logger.error({ error: serializeError(error) }, "Failed to send tool call status update")
       }
     },
     onError: (error: unknown) => {
