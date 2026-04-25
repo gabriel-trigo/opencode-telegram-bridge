@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.8.5
+
+### Patch Changes
+
+- 7fb0e6e: Improve tool-call visibility and diagnostics by showing concise tool status details in Telegram and including upstream SDK error context when prompt requests fail.
+
 ## 1.8.4
 
 ### Patch Changes
