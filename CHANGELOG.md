@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.8.4
+
+### Patch Changes
+
+- ea4a987: Surface OpenCode tool-call progress in Telegram by forwarding tool-part event updates as live per-call status messages.
+
 ## 1.8.3
 
 ### Patch Changes
