@@ -121,4 +121,26 @@ describe("opencode error surfacing", () => {
     await expect(promise).rejects.toThrow(OpencodeRequestError)
     await expect(promise).rejects.toThrow("returned no text output")
   })
+
+  it("includes SDK error details when session.prompt returns no data", async () => {
+    promptMock.mockResolvedValueOnce({
+      error: {
+        code: "BAD_GATEWAY",
+        status: 502,
+        message: "upstream unavailable",
+      },
+    } as any)
+
+    const bridge = createOpencodeBridge({
+      serverUrl: "http://localhost:3000",
+      serverUsername: "opencode",
+    })
+
+    const promise = bridge.promptFromChat(123, { text: "hello" }, "/tmp")
+    await expect(promise).rejects.toThrow(OpencodeRequestError)
+    await expect(promise).rejects.toThrow("session.prompt failed")
+    await expect(promise).rejects.toThrow("code=BAD_GATEWAY")
+    await expect(promise).rejects.toThrow("status=502")
+    await expect(promise).rejects.toThrow("upstream unavailable")
+  })
 })

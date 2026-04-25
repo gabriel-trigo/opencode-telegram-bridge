@@ -3272,6 +3272,10 @@ describe("bot handler behavior", () => {
     })
 
     expect(bot.telegram.sendMessage).toHaveBeenCalledTimes(1)
+    expect(bot.telegram.sendMessage).toHaveBeenCalledWith(
+      10,
+      expect.stringContaining("File: README.md"),
+    )
     expect(bot.telegram.editMessageText).toHaveBeenCalledTimes(1)
     expect(bot.telegram.editMessageText).toHaveBeenCalledWith(
       10,

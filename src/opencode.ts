@@ -137,7 +137,69 @@ export type EventStreamHandlers = {
     part: ToolCallPart
     directory: string
   }) => void | Promise<void>
+  onEvent?: (event: {
+    type: string
+    directory: string
+    payload: unknown
+  }) => void | Promise<void>
   onError?: (error: unknown) => void
+}
+
+const stringifyForError = (value: unknown, maxLength: number) => {
+  if (value == null) {
+    return ""
+  }
+
+  const raw = (() => {
+    if (typeof value === "string") {
+      return value
+    }
+
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return String(value)
+    }
+  })()
+
+  return raw.length > maxLength ? `${raw.slice(0, maxLength)}...` : raw
+}
+
+const describeSdkError = (error: unknown): string | null => {
+  if (!error) {
+    return null
+  }
+
+  const fromMessage =
+    error && typeof error === "object"
+      ? (error as { message?: unknown }).message
+      : undefined
+  const fromCode =
+    error && typeof error === "object"
+      ? (error as { code?: unknown }).code
+      : undefined
+  const fromStatus =
+    error && typeof error === "object"
+      ? (error as { status?: unknown }).status
+      : undefined
+
+  const details: string[] = []
+  if (typeof fromCode === "string" && fromCode.trim()) {
+    details.push(`code=${fromCode.trim()}`)
+  }
+  if (typeof fromStatus === "number" && Number.isFinite(fromStatus)) {
+    details.push(`status=${fromStatus}`)
+  }
+  if (typeof fromMessage === "string" && fromMessage.trim()) {
+    details.push(fromMessage.trim())
+  }
+
+  if (details.length > 0) {
+    return details.join("; ")
+  }
+
+  const fallback = stringifyForError(error, 500)
+  return fallback || null
 }
 
 const buildBasicAuthHeader = (username: string, password: string) => {
@@ -229,7 +291,9 @@ const requireData = <T>(
   label: string,
 ): NonNullable<T> => {
   if (result.data == null) {
-    throw new OpencodeRequestError(`OpenCode ${label} failed`)
+    const details = describeSdkError(result.error)
+    const suffix = details ? `: ${details}` : ""
+    throw new OpencodeRequestError(`OpenCode ${label} failed${suffix}`)
   }
 
   return result.data as NonNullable<T>
@@ -614,7 +678,7 @@ export const createOpencodeBridge = (
       const responseResult = await client.question.reject(parameters)
       return requireData(responseResult, "question.reject")
     },
-    startEventStream({ onPermissionAsked, onQuestionAsked, onToolCallUpdated, onError }) {
+    startEventStream({ onPermissionAsked, onQuestionAsked, onToolCallUpdated, onEvent, onError }) {
       const abortController = new AbortController()
 
       const run = async () => {
@@ -629,7 +693,20 @@ export const createOpencodeBridge = (
               }
 
               const payload = (event as GlobalEvent).payload
-              if (payload?.type === "permission.asked") {
+              const payloadType =
+                payload && typeof payload === "object"
+                  ? (payload as { type?: unknown }).type
+                  : undefined
+              if (typeof payloadType === "string") {
+                await Promise.resolve(
+                  onEvent?.({
+                    type: payloadType,
+                    directory: (event as GlobalEvent).directory,
+                    payload,
+                  }),
+                )
+              }
+              if (payloadType === "permission.asked") {
                 const permissionEvent = payload as {
                   type: "permission.asked"
                   properties: PermissionRequest
@@ -643,7 +720,7 @@ export const createOpencodeBridge = (
                 continue
               }
 
-              if (payload?.type === "question.asked") {
+              if (payloadType === "question.asked") {
                 const questionEvent = payload as {
                   type: "question.asked"
                   properties: QuestionRequest
@@ -657,7 +734,7 @@ export const createOpencodeBridge = (
                 continue
               }
 
-              if (payload?.type === "message.part.updated") {
+              if (payloadType === "message.part.updated") {
                 const partEvent = payload as {
                   type: "message.part.updated"
                   properties: {
