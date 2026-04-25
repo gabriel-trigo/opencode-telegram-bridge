@@ -1,5 +1,11 @@
 # opencode-telegram-bridge
 
+## 1.8.3
+
+### Patch Changes
+
+- e20a964: Include Telegram message timestamp metadata in prompt text sent to OpenCode so the model can reason about when a user message was originally sent.
+
 ## 1.8.2
 
 ### Patch Changes
