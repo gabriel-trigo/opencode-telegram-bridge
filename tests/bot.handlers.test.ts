@@ -108,15 +108,18 @@ const createTextCtx = (options: {
   chatId?: number
   text: string
   messageId?: number
+  date?: number
   entities?: Array<{ type: string; offset: number }>
 }) => {
   const messageId = options.messageId ?? 100
+  const date = options.date ?? 1_700_000_000
   return {
     from: { id: options.userId, username: "user" },
     chat: options.chatId == null ? undefined : { id: options.chatId },
     message: {
       text: options.text,
       message_id: messageId,
+      date,
       entities: options.entities,
     },
     reply: vi.fn(async () => undefined),
@@ -140,16 +143,19 @@ const createPhotoCtx = (options: {
   userId: number
   chatId: number
   messageId?: number
+  date?: number
   caption?: string
   fileId?: string
   fileSize?: number
 }) => {
   const messageId = options.messageId ?? 100
+  const date = options.date ?? 1_700_000_000
   return {
     from: { id: options.userId, username: "user" },
     chat: { id: options.chatId },
     message: {
       message_id: messageId,
+      date,
       caption: options.caption,
       photo: [
         {
@@ -169,6 +175,7 @@ const createDocumentCtx = (options: {
   userId: number
   chatId: number
   messageId?: number
+  date?: number
   caption?: string
   fileId?: string
   fileName?: string
@@ -176,11 +183,13 @@ const createDocumentCtx = (options: {
   fileSize?: number
 }) => {
   const messageId = options.messageId ?? 100
+  const date = options.date ?? 1_700_000_000
   return {
     from: { id: options.userId, username: "user" },
     chat: { id: options.chatId },
     message: {
       message_id: messageId,
+      date,
       caption: options.caption,
       document: {
         file_id: options.fileId ?? "file-1",
@@ -269,6 +278,12 @@ describe("bot handler behavior", () => {
     await flushMicrotasks()
 
     expect(opencode.promptFromChat).toHaveBeenCalledTimes(1)
+    const forwarded = (opencode.promptFromChat as any).mock.calls[0][1] as {
+      text: string
+    }
+    expect(forwarded.text).toContain("[telegram_message_metadata]")
+    expect(forwarded.text).toContain("sent_at_unix: 1700000000")
+    expect(forwarded.text).toContain("[user_message]\nhello")
     expect(bot!.telegram.sendMessage).toHaveBeenCalledWith(
       10,
       "hi",
@@ -354,7 +369,7 @@ describe("bot handler behavior", () => {
       abortSession: vi.fn(async () => true),
       promptFromChat: vi.fn(
         async (_chatId: number, input: any, _dir: string, options?: any) => {
-          if (input?.text === "second") {
+          if (typeof input?.text === "string" && input.text.endsWith("[user_message]\nsecond")) {
             return { reply: "ok", model: null }
           }
 
@@ -1965,7 +1980,7 @@ describe("bot handler behavior", () => {
 
     expect(opencode.promptFromChat).toHaveBeenCalledWith(
       10,
-      expect.objectContaining({ text: "hello" }),
+      expect.objectContaining({ text: expect.stringContaining("[user_message]\nhello") }),
       "/home/user",
       expect.objectContaining({
         model: { providerID: "openai", modelID: "gpt-5.2-codex" },
@@ -2500,6 +2515,80 @@ describe("bot handler behavior", () => {
     }
   })
 
+  it("photo handler forwards timestamp metadata to OpenCode", async () => {
+    let receivedInput: any
+
+    const opencode = {
+      ensureSessionId: vi.fn(async () => "session-1"),
+      promptFromChat: vi.fn(async (_chatId: number, input: any) => {
+        receivedInput = input
+        return { reply: "ok", model: null }
+      }),
+      abortSession: vi.fn(async () => true),
+      resetSession: vi.fn(() => false),
+      resetAllSessions: vi.fn(() => undefined),
+      getSessionOwner: vi.fn(() => null),
+      listModels: vi.fn(async () => []),
+      replyToPermission: vi.fn(async () => true),
+      startEventStream: vi.fn(() => ({ stop: () => undefined })),
+    }
+
+    const projects = {
+      listProjects: () => [{ alias: "home", path: "/home/user" }],
+      getProject: () => ({ alias: "home", path: "/home/user" }),
+      addProject: vi.fn(),
+      removeProject: vi.fn(),
+    }
+    const chatProjects = { getActiveAlias: () => null, setActiveAlias: vi.fn() }
+    const chatModels = {
+      getModel: () => null,
+      setModel: vi.fn(),
+      clearModel: vi.fn(),
+      clearAll: vi.fn(),
+    }
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => Buffer.from([0xff, 0xd8, 0xff]),
+    }))
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = fetchMock as any
+
+    try {
+      const { startBot } = await import("../src/bot.js")
+      startBot(
+        {
+          botToken: "token",
+          allowedUserIds: [1],
+          opencode: { serverUrl: "http://localhost", serverUsername: "opencode" },
+          handlerTimeoutMs: 9999,
+          promptTimeoutMs: 10_000,
+          telegramDownloadTimeoutMs: 1000,
+        },
+        opencode as any,
+        projects as any,
+        chatProjects as any,
+        chatModels as any,
+      )
+
+      const state = (globalThis as any).__telegrafMockState as TelegrafMockState
+      const bot = state.lastBot!
+
+      const ctx = createPhotoCtx({ userId: 1, chatId: 10, messageId: 100, caption: "analyze" })
+      await bot.dispatchOn("photo", ctx)
+      await flushMicrotasks()
+      await flushMicrotasks()
+
+      expect(opencode.promptFromChat).toHaveBeenCalledTimes(1)
+      expect(receivedInput.text).toContain("[telegram_message_metadata]")
+      expect(receivedInput.text).toContain("sent_at_unix: 1700000000")
+      expect(receivedInput.text).toContain("[user_message]\nanalyze")
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it("document handler replies on download failure and does not call OpenCode", async () => {
     const opencode = {
       ensureSessionId: vi.fn(async () => "session-1"),
@@ -2649,6 +2738,8 @@ describe("bot handler behavior", () => {
       await flushMicrotasks()
 
       expect(opencode.promptFromChat).toHaveBeenCalledTimes(1)
+      expect(receivedInput.text).toContain("[telegram_message_metadata]")
+      expect(receivedInput.text).toContain("sent_at_unix: 1700000000")
       expect(receivedInput.files?.[0]?.mime).toBe("application/pdf")
     } finally {
       globalThis.fetch = originalFetch
