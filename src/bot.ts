@@ -174,6 +174,23 @@ export const startBot = (
     return `${value.slice(0, maxLength)}...`
   }
 
+  const addTelegramTimestampMetadata = (text: string, unixSeconds?: number) => {
+    if (typeof unixSeconds !== "number" || !Number.isFinite(unixSeconds)) {
+      return text
+    }
+
+    const normalizedUnix = Math.trunc(unixSeconds)
+    const sentAtUtc = new Date(normalizedUnix * 1000).toISOString()
+    return [
+      "[telegram_message_metadata]",
+      `sent_at_utc: ${sentAtUtc}`,
+      `sent_at_unix: ${normalizedUnix}`,
+      "",
+      "[user_message]",
+      text,
+    ].join("\n")
+  }
+
   const buildQuestionPromptText = (pending: PendingQuestion) => {
     const { request, currentIndex, answers } = pending
     const questions = request.questions
@@ -588,7 +605,7 @@ export const startBot = (
     ctx: {
       from?: unknown
       chat?: { id?: number } | undefined
-      message?: { message_id?: number } | undefined
+      message?: { message_id?: number; date?: number } | undefined
       reply: (text: string) => Promise<unknown>
     },
     userLabel: string,
@@ -730,14 +747,18 @@ export const startBot = (
       try {
         const resolvedInput =
           typeof input === "function" ? await input() : input
+        const enrichedInput: PromptInput = {
+          ...resolvedInput,
+          text: addTelegramTimestampMetadata(resolvedInput.text, ctx.message?.date),
+        }
 
         logEvent("log", "prompt.input", {
           chatId,
           replyToMessageId,
           projectDir: project.path,
-          textLength: resolvedInput.text.length,
-          fileCount: resolvedInput.files?.length ?? 0,
-          fileMimes: resolvedInput.files?.map((file) => file.mime) ?? [],
+          textLength: enrichedInput.text.length,
+          fileCount: enrichedInput.files?.length ?? 0,
+          fileMimes: enrichedInput.files?.map((file) => file.mime) ?? [],
         })
 
         if (abortController.signal.aborted) {
@@ -782,7 +803,7 @@ export const startBot = (
         })
         const result = await opencode.promptFromChat(
           chatId,
-          resolvedInput,
+          enrichedInput,
           project.path,
           promptOptions,
         )
