@@ -36,6 +36,24 @@ describe("prompt guard", () => {
     vi.useRealTimers()
   })
 
+  it("cancels all in-flight prompts with cancelAll", () => {
+    const guard = createPromptGuard(1000)
+    const onTimeout = vi.fn()
+
+    const c1 = guard.tryStart(1, 100, onTimeout)
+    const c2 = guard.tryStart(2, 200, onTimeout)
+    expect(c1).not.toBeNull()
+    expect(c2).not.toBeNull()
+
+    guard.cancelAll()
+
+    expect(c1?.signal.aborted).toBe(true)
+    expect(c2?.signal.aborted).toBe(true)
+    expect(guard.isInFlight(1)).toBe(false)
+    expect(guard.isInFlight(2)).toBe(false)
+    expect(onTimeout).toHaveBeenCalledTimes(0)
+  })
+
   it("aborts a prompt and releases the lock", () => {
     const guard = createPromptGuard(1000)
     const onTimeout = vi.fn()

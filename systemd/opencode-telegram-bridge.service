@@ -9,6 +9,7 @@ EnvironmentFile=%h/.config/opencode-telegram-bridge/opencode-telegram-bridge.env
 ExecStart=/usr/bin/opencode-telegram-bridge
 Restart=on-failure
 RestartSec=3
+TimeoutStopSec=10
 
 [Install]
 WantedBy=default.target
