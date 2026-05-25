@@ -29,6 +29,7 @@ export type PromptGuard = {
     | null
   finish: (chatId: number) => void
   isInFlight: (chatId: number) => boolean
+  cancelAll: () => void
 }
 
 export const createPromptGuard = (timeoutMs: number): PromptGuard => {
@@ -129,11 +130,18 @@ export const createPromptGuard = (timeoutMs: number): PromptGuard => {
     inFlight.delete(chatId)
   }
 
+  const cancelAll = () => {
+    for (const [chatId] of inFlight) {
+      abort(chatId)
+    }
+  }
+
   return {
     tryStart,
     setSessionId,
     abort,
     finish,
     isInFlight: (chatId) => inFlight.has(chatId),
+    cancelAll,
   }
 }

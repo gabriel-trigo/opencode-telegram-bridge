@@ -28,3 +28,7 @@ export const logger = pino(
     { dedupe: true },
   ),
 )
+
+export const flushLogger = () => {
+  logger.flush()
+}

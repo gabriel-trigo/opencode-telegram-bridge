@@ -17,7 +17,7 @@ import { createPromptGuard } from "./prompt-guard.js"
 import { HOME_PROJECT_ALIAS, type ProjectStore } from "./projects.js"
 import type { ChatModelStore, ChatProjectStore } from "./state.js"
 import { splitTelegramMessage } from "./telegram.js"
-import { logger } from "./logger.js"
+import { flushLogger, logger } from "./logger.js"
 import {
   DEFAULT_MAX_IMAGE_BYTES,
   TelegramImageTooLargeError,
@@ -86,6 +86,10 @@ type ToolCallStatusMessage = {
   lastRenderedText: string
 }
 
+export type BotInstance = {
+  stop: (reason: string) => void
+}
+
 const execAsync = promisify(exec)
 
 export const toTelegrafInlineKeyboard = (
@@ -103,7 +107,7 @@ export const startBot = (
   projects: ProjectStore,
   chatProjects: ChatProjectStore,
   chatModels: ChatModelStore,
-): Telegraf => {
+): BotInstance => {
   const bot = new Telegraf(config.botToken, {
     handlerTimeout: config.handlerTimeoutMs,
   })
@@ -696,7 +700,7 @@ export const startBot = (
     }
   }
 
-  opencode.startEventStream({
+  const eventStream = opencode.startEventStream({
     onPermissionAsked: async ({ request, directory }) => {
       const owner = opencode.getSessionOwner(request.sessionID)
       if (!owner) {
@@ -1926,5 +1930,13 @@ export const startBot = (
     .catch((error) =>
       logger.error({ error: serializeError(error) }, "Failed to set private chat commands"),
     )
-  return bot
+  return {
+    stop: (reason) => {
+      eventStream.stop()
+      promptGuard.cancelAll()
+      bot.stop(reason)
+      flushLogger()
+      process.exit(0)
+    },
+  }
 }
