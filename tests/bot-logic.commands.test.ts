@@ -62,4 +62,10 @@ describe("parseModelCommand", () => {
       args: ["openai/gpt-5.2-codex"],
     })
   })
+  it("parses set with openrouter model ref", () => {
+    expect(parseModelCommand("/model set openrouter/z-ai/glm-5.1")).toEqual({
+      subcommand: "set",
+      args: ["openrouter/z-ai/glm-5.1"],
+    })
+  })
 })

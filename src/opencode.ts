@@ -300,7 +300,12 @@ const requireData = <T>(
 }
 
 const parseModelRef = (value: string): ModelRef => {
-  const [providerID, modelID] = value.split("/")
+  const slashIndex = value.indexOf("/");
+  if (slashIndex === -1) {
+      throw new OpencodeModelFormatError(`Unexpected OpenCode model format: ${value}`);
+  }
+  const providerID = value.slice(0, slashIndex);
+  const modelID = value.slice(slashIndex + 1);
   if (!providerID || !modelID) {
     throw new OpencodeModelFormatError(`Unexpected OpenCode model format: ${value}`)
   }
