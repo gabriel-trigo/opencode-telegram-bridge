@@ -1277,11 +1277,13 @@ export const startBot = (
             return
           }
 
-          const [providerID, modelID] = rawModel.split("/")
-          if (!providerID || !modelID) {
-            await ctx.reply("Model must be in provider/model format. Use /model list.")
-            return
+          const slashIndex = rawModel.indexOf("/");
+          if (slashIndex === -1) {
+              await ctx.reply("Model must be in provider/model format. Use /model list.");
+              return;
           }
+          const providerID = rawModel.slice(0, slashIndex);
+          const modelID = rawModel.slice(slashIndex + 1);
 
           try {
             const providers = await opencode.listModels(project.path)

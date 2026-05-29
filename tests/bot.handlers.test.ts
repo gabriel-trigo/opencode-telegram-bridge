@@ -1885,6 +1885,12 @@ describe("bot handler behavior", () => {
             "gpt-5.2": { name: "GPT-5.2" },
           },
         },
+        {
+          id: "openrouter",
+          models: {
+            "z-ai/glm-5.1": { name: "GLM-5.1" },
+          },
+        },
       ]),
       replyToPermission: vi.fn(async () => true),
       startEventStream: vi.fn(() => ({ stop: () => undefined })),
@@ -1957,6 +1963,17 @@ describe("bot handler behavior", () => {
     expect(missingModel.reply).toHaveBeenCalledWith(
       "Model 'openai/missing' not found. Use /model list.",
     )
+
+    const valid_model = createTextCtx({
+      userId: 1,
+      chatId: 10,
+      text: "/model set openrouter/z-ai/glm-5.1",
+    })
+    await bot.dispatchCommand("model", valid_model)
+    expect(valid_model.reply).toHaveBeenCalledWith(
+      "Current model set to openrouter/z-ai/glm-5.1.",
+    )
+    expect(storedModel).toEqual({ providerID: "openrouter", modelID: "z-ai/glm-5.1" })
 
     const success = createTextCtx({
       userId: 1,
