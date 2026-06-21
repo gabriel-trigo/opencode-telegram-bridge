@@ -771,26 +771,28 @@ export const startBot = (
         logger.error({ error: serializeError(error) }, "Failed to send question request")
       }
     },
-    onToolCallUpdated: async ({ part }) => {
-      const owner = opencode.getSessionOwner(part.sessionID)
-      if (!owner) {
-        logger.warn(
-          {
-            sessionId: part.sessionID,
-            messageId: part.messageID,
-            callId: part.callID,
-          },
-          "Tool call update for unknown session",
-        )
-        return
-      }
+    onToolCallUpdated: config.showToolCalls
+      ? async ({ part }) => {
+          const owner = opencode.getSessionOwner(part.sessionID)
+          if (!owner) {
+            logger.warn(
+              {
+                sessionId: part.sessionID,
+                messageId: part.messageID,
+                callId: part.callID,
+              },
+              "Tool call update for unknown session",
+            )
+            return
+          }
 
-      try {
-        await upsertToolCallStatusMessage(part, owner.chatId)
-      } catch (error) {
-        logger.error({ error: serializeError(error) }, "Failed to send tool call status update")
-      }
-    },
+          try {
+            await upsertToolCallStatusMessage(part, owner.chatId)
+          } catch (error) {
+            logger.error({ error: serializeError(error) }, "Failed to send tool call status update")
+          }
+        }
+      : undefined,
     onEvent: ({ type, directory, payload }) => {
       const summary = summarizeEventPayload(payload)
       logger.debug(

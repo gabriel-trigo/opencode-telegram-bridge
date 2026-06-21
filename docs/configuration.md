@@ -21,6 +21,7 @@ If both are set, `TELEGRAM_ALLOWED_USER_IDS` takes precedence.
 - `OPENCODE_RESTART_TIMEOUT_MS` - Restart command timeout in milliseconds (default: 30000).
 - `OPENCODE_BRIDGE_RESTART_COMMAND` - Command to restart the Telegram bridge when `/restart` is used (example: `systemctl --user restart opencode-telegram-bridge --no-block` or `launchctl kickstart -k gui/$UID/com.opencode.telegram-bridge`).
 - `OPENCODE_BRIDGE_RESTART_TIMEOUT_MS` - Restart command timeout in milliseconds (default: 30000).
+- `TELEGRAM_SHOW_TOOL_CALLS` - Show OpenCode tool-call progress messages in Telegram. Set to `false` to hide them (default: `true`).
 
 ## Data storage
 - Project aliases and chat selections are stored in `~/.opencode-telegram-bridge/projects.db`.
