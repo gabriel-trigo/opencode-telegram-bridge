@@ -7,6 +7,7 @@ export type BotConfig = {
   handlerTimeoutMs: number
   promptTimeoutMs: number
   telegramDownloadTimeoutMs?: number
+  showToolCalls: boolean
   opencodeRestart?: RestartCommandConfig
   bridgeRestart?: RestartCommandConfig
 }
@@ -151,6 +152,8 @@ export const loadConfig = (): BotConfig => {
       }
     : undefined
 
+  const showToolCalls = process.env.TELEGRAM_SHOW_TOOL_CALLS !== "false"
+
   const baseConfig: BotConfig = {
     botToken,
     allowedUserIds,
@@ -158,6 +161,7 @@ export const loadConfig = (): BotConfig => {
     handlerTimeoutMs,
     promptTimeoutMs,
     telegramDownloadTimeoutMs,
+    showToolCalls,
   }
 
   let config = baseConfig
